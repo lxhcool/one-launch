@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ServiceManagement
 
 enum SortMode: String, CaseIterable, Sendable {
     case recent = "recent"
@@ -51,6 +52,16 @@ final class SettingsStore: ObservableObject {
         didSet { defaults.set(manualAppOrder, forKey: Key.manualAppOrder) }
     }
 
+    @Published var launchAtLogin: Bool {
+        didSet {
+            if launchAtLogin {
+                try? SMAppService.mainApp.register()
+            } else {
+                try? SMAppService.mainApp.unregister()
+            }
+        }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
 
@@ -62,6 +73,7 @@ final class SettingsStore: ObservableObject {
 
         self.backgroundImagePath = defaults.string(forKey: Key.backgroundImagePath)
         self.manualAppOrder = defaults.stringArray(forKey: Key.manualAppOrder) ?? []
+        self.launchAtLogin = SMAppService.mainApp.status == .enabled
         reloadBackgroundImage()
     }
 

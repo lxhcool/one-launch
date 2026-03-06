@@ -106,4 +106,11 @@ PLIST
 
 codesign --force --deep --sign - "$APP_DIR" >/dev/null 2>&1 || true
 
+touch "$APP_DIR"
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
+if [ -x "$LSREGISTER" ]; then
+  "$LSREGISTER" -f "$APP_DIR"
+fi
+killall Dock 2>/dev/null || true
+
 echo "Built app bundle: $APP_DIR"

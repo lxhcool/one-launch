@@ -34,6 +34,10 @@ struct SettingsView: View {
 
             backgroundSection
 
+            Divider().overlay(Color.white.opacity(0.1))
+
+            launchAtLoginSection
+
             Spacer(minLength: 0)
 
             HStack {
@@ -50,7 +54,7 @@ struct SettingsView: View {
             }
         }
         .padding(28)
-        .frame(width: 420, height: 520)
+        .frame(width: 420, height: 580)
         .background(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(.ultraThinMaterial)
@@ -181,6 +185,24 @@ struct SettingsView: View {
                     }
                 }
             }
+        }
+    }
+
+    private var launchAtLoginSection: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                sectionLabel("开机自动启动")
+                Text("登录时自动在后台运行 OneLaunch")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: $settingsStore.launchAtLogin)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .tint(.accentColor)
         }
     }
 
