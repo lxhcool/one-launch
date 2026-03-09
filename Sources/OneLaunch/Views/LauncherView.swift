@@ -172,6 +172,7 @@ struct LauncherView: View {
             ForEach(viewModel.gridApps) { app in
                 AppCardView(app: app, iconSize: settingsStore.iconSize) {
                     viewModel.launch(app)
+                    onClose()
                 }
             }
             .onMove { source, destination in
@@ -185,6 +186,7 @@ struct LauncherView: View {
     private func spotlightCard(for app: AppItem) -> some View {
         Button {
             viewModel.launch(app)
+            onClose()
         } label: {
             HStack(spacing: 18) {
                 Image(nsImage: AppIconProvider.shared.icon(for: app))
@@ -250,7 +252,10 @@ struct LauncherView: View {
                 text: $viewModel.query,
                 shouldFocus: $viewModel.shouldFocusSearchField,
                 placeholder: "搜索应用",
-                onCommit: viewModel.launchFirstResult
+                onCommit: {
+                    viewModel.launchFirstResult()
+                    onClose()
+                }
             )
         }
         .padding(.horizontal, 20)

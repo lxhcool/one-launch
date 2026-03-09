@@ -12,7 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         configureMainMenu()
         configureStatusItem()
         configureHotKey()
-        launcherPanelController.show()
+        // 不自动打开界面，仅后台运行；用户通过快捷键 / 状态栏 / 菜单打开
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
