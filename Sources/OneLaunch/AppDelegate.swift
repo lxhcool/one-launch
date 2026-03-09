@@ -13,6 +13,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         configureStatusItem()
         configureHotKey()
         // 不自动打开界面，仅后台运行；用户通过快捷键 / 状态栏 / 菜单打开
+        preloadIconsInBackground()
+    }
+
+    /// 启动时在后台预加载应用图标，首次打开面板时减少卡顿
+    private func preloadIconsInBackground() {
+        Task.detached(priority: .utility) {
+            let list = AppScanner().loadCachedApplications()
+            if let apps = list, !apps.isEmpty {
+                await MainActor.run {
+                    AppIconProvider.shared.preload(apps: apps, limit: 80)
+                }
+            }
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

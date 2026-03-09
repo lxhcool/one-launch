@@ -61,57 +61,73 @@ final class LauncherViewModel: ObservableObject {
     }
 
     private func updateFilteredAppsCache() {
+        let appsCopy = apps
+        let queryCopy = query
+        let sortMode = settingsStore.sortMode
+        let manualOrder = settingsStore.manualAppOrder
+        let hasQuery = !queryCopy.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        // 无搜索时先立刻用原始列表撑开首屏，避免主线程做大量 UserDefaults 读取和排序导致卡顿
+        if !hasQuery && !appsCopy.isEmpty {
+            filteredAppsCache = appsCopy
+        }
+
+        Task.detached(priority: .userInitiated) {
+            let result = LauncherViewModel.computeFilteredApps(apps: appsCopy, query: queryCopy, sortMode: sortMode, manualOrder: manualOrder)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                if self.apps == appsCopy && self.query == queryCopy {
+                    self.filteredAppsCache = result
+                }
+            }
+        }
+    }
+
+    /// 在后台线程执行，用于避免主线程卡顿（UserDefaults 读取 + 排序）
+    private nonisolated static func computeFilteredApps(apps: [AppItem], query: String, sortMode: SortMode, manualOrder: [String]) -> [AppItem] {
         let hasQuery = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let store = RecentAppsStore()
 
         let ranked = apps.compactMap { app -> (app: AppItem, score: Int, recency: TimeInterval, count: Int)? in
-            let recency = recentAppsStore.lastLaunchTimestamp(for: app)
-            let count = recentAppsStore.launchCount(for: app)
-
-            guard hasQuery else {
-                return (app, 0, recency, count)
-            }
-            guard let score = SearchScorer.score(app: app, query: query) else {
-                return nil
-            }
+            let recency = store.lastLaunchTimestamp(for: app)
+            let count = store.launchCount(for: app)
+            guard hasQuery else { return (app, 0, recency, count) }
+            guard let score = SearchScorer.score(app: app, query: query) else { return nil }
             return (app, score, recency, count)
         }
 
-        let result: [AppItem]
         if hasQuery {
-            result = ranked.sorted { lhs, rhs in
+            return ranked.sorted { lhs, rhs in
                 if lhs.score != rhs.score { return lhs.score > rhs.score }
                 if lhs.recency != rhs.recency { return lhs.recency > rhs.recency }
                 return lhs.app.name.localizedStandardCompare(rhs.app.name) == .orderedAscending
             }.map(\.app)
-        } else {
-            switch settingsStore.sortMode {
-            case .recent:
-                result = ranked.sorted { lhs, rhs in
-                    if lhs.recency != rhs.recency { return lhs.recency > rhs.recency }
-                    return lhs.app.name.localizedStandardCompare(rhs.app.name) == .orderedAscending
-                }.map(\.app)
-            case .alpha:
-                result = ranked.sorted { lhs, rhs in
-                    lhs.app.name.localizedStandardCompare(rhs.app.name) == .orderedAscending
-                }.map(\.app)
-            case .frequency:
-                result = ranked.sorted { lhs, rhs in
-                    if lhs.count != rhs.count { return lhs.count > rhs.count }
-                    if lhs.recency != rhs.recency { return lhs.recency > rhs.recency }
-                    return lhs.app.name.localizedStandardCompare(rhs.app.name) == .orderedAscending
-                }.map(\.app)
-            case .manual:
-                let order = settingsStore.manualAppOrder
-                let orderMap = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
-                result = ranked.sorted { lhs, rhs in
-                    let li = orderMap[lhs.app.id] ?? Int.max
-                    let ri = orderMap[rhs.app.id] ?? Int.max
-                    if li != ri { return li < ri }
-                    return lhs.app.name.localizedStandardCompare(rhs.app.name) == .orderedAscending
-                }.map(\.app)
-            }
         }
-        filteredAppsCache = result
+        switch sortMode {
+        case .recent:
+            return ranked.sorted { lhs, rhs in
+                if lhs.recency != rhs.recency { return lhs.recency > rhs.recency }
+                return lhs.app.name.localizedStandardCompare(rhs.app.name) == .orderedAscending
+            }.map(\.app)
+        case .alpha:
+            return ranked.sorted { lhs, rhs in
+                lhs.app.name.localizedStandardCompare(rhs.app.name) == .orderedAscending
+            }.map(\.app)
+        case .frequency:
+            return ranked.sorted { lhs, rhs in
+                if lhs.count != rhs.count { return lhs.count > rhs.count }
+                if lhs.recency != rhs.recency { return lhs.recency > rhs.recency }
+                return lhs.app.name.localizedStandardCompare(rhs.app.name) == .orderedAscending
+            }.map(\.app)
+        case .manual:
+            let orderMap = Dictionary(uniqueKeysWithValues: manualOrder.enumerated().map { ($1, $0) })
+            return ranked.sorted { lhs, rhs in
+                let li = orderMap[lhs.app.id] ?? Int.max
+                let ri = orderMap[rhs.app.id] ?? Int.max
+                if li != ri { return li < ri }
+                return lhs.app.name.localizedStandardCompare(rhs.app.name) == .orderedAscending
+            }.map(\.app)
+        }
     }
 
     func deferredPrepare() {
