@@ -5,7 +5,8 @@ import SwiftUI
 @MainActor
 final class LauncherPanelController: NSObject {
     let viewModel = LauncherViewModel()
-    private var hideWorkItem: DispatchWorkItem?
+    private var lastScreenFrame: NSRect?
+    private var hasPrewarmed = false
 
     var isVisible: Bool {
         panel.isVisible
@@ -27,10 +28,10 @@ final class LauncherPanelController: NSObject {
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        panel.animationBehavior = .none
+        panel.animationBehavior = .default
         panel.setFrameAutosaveName("OneLaunchPanel")
 
-        let rootView = LauncherView(viewModel: viewModel) { [weak self] in
+        let rootView = LauncherView(viewModel: viewModel, settingsStore: viewModel.settingsStore) { [weak self] in
             self?.hide()
         }
 
@@ -40,6 +41,11 @@ final class LauncherPanelController: NSObject {
 
     override init() {
         super.init()
+        observeAppState()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     func toggle() {
@@ -47,42 +53,48 @@ final class LauncherPanelController: NSObject {
     }
 
     func show() {
-        hideWorkItem?.cancel()
-        hideWorkItem = nil
-
         if let targetScreen = currentScreen() {
-            panel.setFrame(targetScreen.frame, display: false)
+            let frame = targetScreen.frame
+            if lastScreenFrame != frame {
+                panel.setFrame(frame, display: false)
+                lastScreenFrame = frame
+            }
         }
 
         panel.alphaValue = 1
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        viewModel.isPresented = true
+        viewModel.deferredPrepare()
+    }
 
-        withAnimation(.snappy(duration: 0.38)) {
-            viewModel.isPresented = true
+    func prewarmIfNeeded() {
+        guard !hasPrewarmed else { return }
+        hasPrewarmed = true
+
+        if let targetScreen = currentScreen() {
+            let frame = targetScreen.frame
+            if lastScreenFrame != frame {
+                panel.setFrame(frame, display: false)
+                lastScreenFrame = frame
+            }
         }
 
-        viewModel.deferredPrepare()
+        panel.alphaValue = 0
+        panel.ignoresMouseEvents = true
+        panel.orderFront(nil)
+        panel.displayIfNeeded()
+        panel.orderOut(nil)
+        panel.ignoresMouseEvents = false
+        panel.alphaValue = 1
     }
 
     func hide() {
         guard panel.isVisible else {
             return
         }
-
-        hideWorkItem?.cancel()
-
-        withAnimation(.easeOut(duration: 0.3)) {
-            viewModel.isPresented = false
-        }
-
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            self.panel.orderOut(nil)
-        }
-
-        hideWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
+        viewModel.isPresented = false
+        panel.orderOut(nil)
     }
 
     private func currentScreen() -> NSScreen? {
@@ -91,5 +103,18 @@ final class LauncherPanelController: NSObject {
         return NSScreen.screens.first {
             NSMouseInRect(mouseLocation, $0.frame, false)
         } ?? NSScreen.main
+    }
+
+    private func observeAppState() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleDidResignActive(_:)),
+            name: NSApplication.didResignActiveNotification,
+            object: NSApp
+        )
+    }
+
+    @objc private func handleDidResignActive(_ notification: Notification) {
+        hide()
     }
 }

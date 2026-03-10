@@ -9,27 +9,34 @@ struct AppCardView: View {
         iconSize * 0.18
     }
 
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 10) {
-                Image(nsImage: AppIconProvider.shared.icon(for: app))
-                    .resizable()
-                    .interpolation(.high)
-                    .frame(width: iconSize, height: iconSize)
-                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    private var cardHeight: Double {
+        iconSize + 42
+    }
 
-                Text(app.name)
-                    .font(.system(size: max(11, iconSize * 0.19), weight: .medium))
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity)
-            }
-            .frame(maxWidth: .infinity, minHeight: iconSize + 52)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 8)
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(nsImage: AppIconProvider.shared.icon(for: app))
+                .resizable()
+                .interpolation(.high)
+                .frame(width: iconSize, height: iconSize)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+
+            Text(app.name)
+                .font(.system(size: max(10, iconSize * 0.16), weight: .medium))
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.center)
+                .lineLimit(nil)
+                .allowsTightening(true)
+                .minimumScaleFactor(0.72)
+                .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28, alignment: .top)
+                .clipped()
+                .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, minHeight: cardHeight, maxHeight: cardHeight, alignment: .top)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: action)
         .help(app.bundleIdentifier ?? app.url.path)
     }
 }

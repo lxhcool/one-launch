@@ -68,7 +68,10 @@ if [ -f "$ICON_SRC" ]; then
   sips -z 512 512   "$ICON_SRC" --out "$ICONSET_DIR/icon_256x256@2x.png" >/dev/null
   sips -z 512 512   "$ICON_SRC" --out "$ICONSET_DIR/icon_512x512.png"    >/dev/null
   sips -z 1024 1024 "$ICON_SRC" --out "$ICONSET_DIR/icon_512x512@2x.png" >/dev/null
-  iconutil -c icns "$ICONSET_DIR" -o "$RESOURCES_DIR/AppIcon.icns"
+  if ! iconutil -c icns "$ICONSET_DIR" -o "$RESOURCES_DIR/AppIcon.icns"; then
+    echo "iconutil failed, falling back to sips direct icns conversion"
+    sips -s format icns "$ICON_SRC" --out "$RESOURCES_DIR/AppIcon.icns" >/dev/null
+  fi
   rm -rf "$ICONSET_DIR"
   echo "Generated app icon from icon.png"
 fi
@@ -109,7 +112,7 @@ codesign --force --deep --sign - "$APP_DIR" >/dev/null 2>&1 || true
 touch "$APP_DIR"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
 if [ -x "$LSREGISTER" ]; then
-  "$LSREGISTER" -f "$APP_DIR"
+  "$LSREGISTER" -f "$APP_DIR" || true
 fi
 killall Dock 2>/dev/null || true
 

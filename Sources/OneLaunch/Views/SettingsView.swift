@@ -28,6 +28,10 @@ struct SettingsView: View {
 
             Divider().overlay(Color.white.opacity(0.1))
 
+            listWidthSection
+
+            Divider().overlay(Color.white.opacity(0.1))
+
             sortModeSection
 
             Divider().overlay(Color.white.opacity(0.1))
@@ -54,7 +58,7 @@ struct SettingsView: View {
             }
         }
         .padding(28)
-        .frame(width: 420, height: 580)
+        .frame(width: 420, height: 620)
         .background(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(.ultraThinMaterial)
@@ -83,7 +87,7 @@ struct SettingsView: View {
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
 
-                Slider(value: $settingsStore.iconSize, in: 48...96, step: 4)
+                Slider(value: $settingsStore.iconSize, in: 56...112, step: 4)
                     .tint(.white.opacity(0.6))
 
                 Image(systemName: "app.fill")
@@ -129,6 +133,30 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.plain)
                 }
+            }
+        }
+    }
+
+    private var listWidthSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionLabel("列表宽度")
+
+            HStack(spacing: 16) {
+                Image(systemName: "rectangle.portrait.and.arrow.right")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+
+                Slider(value: $settingsStore.listContentWidth, in: 1180...1720, step: 20)
+                    .tint(.white.opacity(0.6))
+
+                Image(systemName: "rectangle.landscape")
+                    .font(.system(size: 16))
+                    .foregroundStyle(.secondary)
+
+                Text("\(Int(settingsStore.listContentWidth))")
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 44, alignment: .trailing)
             }
         }
     }

@@ -4,31 +4,38 @@ import AppKit
 final class AppIconProvider {
     static let shared = AppIconProvider()
 
-    private let cache = NSCache<NSString, NSImage>()
+    private var cache: [String: NSImage] = [:]
+    private var inFlight: Set<String> = []
 
     private init() {}
 
     func icon(for app: AppItem) -> NSImage {
-        let key = app.url.path as NSString
+        let path = app.url.path
 
-        if let cachedImage = cache.object(forKey: key) {
+        if let cachedImage = cache[path] {
             return cachedImage
         }
 
-        let image = NSWorkspace.shared.icon(forFile: app.url.path)
+        let image = NSWorkspace.shared.icon(forFile: path)
         image.size = NSSize(width: 64, height: 64)
-        cache.setObject(image, forKey: key)
+        cache[path] = image
         return image
     }
 
     /// 在后台预加载前 N 个应用图标，减轻首次打开列表时的卡顿
     func preload(apps: [AppItem], limit: Int = 80) {
-        let toLoad = Array(apps.prefix(limit))
-        guard !toLoad.isEmpty else { return }
+        let candidatePaths = apps.prefix(limit).map(\.url.path)
+        let toLoadPaths = candidatePaths.filter { path in
+            cache[path] == nil && !inFlight.contains(path)
+        }
+        guard !toLoadPaths.isEmpty else { return }
+
+        for path in toLoadPaths {
+            inFlight.insert(path)
+        }
 
         Task.detached(priority: .utility) {
-            let loaded: [(String, NSImage)] = toLoad.compactMap { app in
-                let path = app.url.path
+            let loaded: [(String, NSImage)] = toLoadPaths.map { path in
                 let img = NSWorkspace.shared.icon(forFile: path)
                 img.size = NSSize(width: 64, height: 64)
                 return (path, img)
@@ -41,7 +48,8 @@ final class AppIconProvider {
 
     private func setCachedImages(_ pairs: [(String, NSImage)]) {
         for (path, img) in pairs {
-            cache.setObject(img, forKey: path as NSString)
+            cache[path] = img
+            inFlight.remove(path)
         }
     }
 }

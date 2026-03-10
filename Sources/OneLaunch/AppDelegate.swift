@@ -12,6 +12,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         configureMainMenu()
         configureStatusItem()
         configureHotKey()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.launcherPanelController.prewarmIfNeeded()
+        }
         // 不自动打开界面，仅后台运行；用户通过快捷键 / 状态栏 / 菜单打开
         preloadIconsInBackground()
     }
@@ -57,11 +60,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if event.type == .rightMouseUp {
-            guard let statusItem, let statusMenu else {
+            guard let button = statusItem?.button, let statusMenu else {
                 return
             }
 
-            statusItem.popUpMenu(statusMenu)
+            NSMenu.popUpContextMenu(statusMenu, with: event, for: button)
             return
         }
 
@@ -82,7 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             keyCode: UInt32(kVK_Space),
             modifiers: [.option]
         ) { [weak self] in
-            Task { @MainActor in
+            DispatchQueue.main.async {
                 self?.launcherPanelController.toggle()
             }
         }
