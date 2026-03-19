@@ -7,6 +7,7 @@ final class LauncherPanelController: NSObject {
     let viewModel = LauncherViewModel()
     private var lastScreenFrame: NSRect?
     private var hasPrewarmed = false
+    private var isAnimating = false
 
     var isVisible: Bool {
         panel.isVisible
@@ -28,7 +29,7 @@ final class LauncherPanelController: NSObject {
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        panel.animationBehavior = .default
+        panel.animationBehavior = .none
         panel.setFrameAutosaveName("OneLaunchPanel")
 
         let rootView = LauncherView(viewModel: viewModel, settingsStore: viewModel.settingsStore) { [weak self] in
@@ -53,6 +54,8 @@ final class LauncherPanelController: NSObject {
     }
 
     func show() {
+        guard !isAnimating else { return }
+
         if let targetScreen = currentScreen() {
             let frame = targetScreen.frame
             if lastScreenFrame != frame {
@@ -61,9 +64,22 @@ final class LauncherPanelController: NSObject {
             }
         }
 
-        panel.alphaValue = 1
+        isAnimating = true
+
+        panel.alphaValue = 0
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.22
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().alphaValue = 1
+        }, completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                self?.isAnimating = false
+            }
+        })
+
         viewModel.isPresented = true
         viewModel.deferredPrepare()
     }
@@ -90,11 +106,24 @@ final class LauncherPanelController: NSObject {
     }
 
     func hide() {
-        guard panel.isVisible else {
+        guard panel.isVisible, !isAnimating else {
             return
         }
+
+        isAnimating = true
         viewModel.isPresented = false
-        panel.orderOut(nil)
+
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.18
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            panel.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                self?.panel.orderOut(nil)
+                self?.panel.alphaValue = 1
+                self?.isAnimating = false
+            }
+        })
     }
 
     private func currentScreen() -> NSScreen? {

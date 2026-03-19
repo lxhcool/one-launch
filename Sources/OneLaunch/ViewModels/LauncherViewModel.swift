@@ -237,22 +237,33 @@ final class LauncherViewModel: ObservableObject {
     }
 
     func deferredPrepare() {
+        // 立即聚焦搜索框，不等待数据加载
+        DispatchQueue.main.async {
+            self.shouldFocusSearchField = true
+        }
+
         if !hasPreparedData {
             hasPreparedData = true
 
             if apps.isEmpty {
+                // 先显示缓存数据，让用户立即看到界面
                 if let cached = AppScanner().loadCachedApplications() {
                     apps = cached
-                    AppIconProvider.shared.preload(apps: cached, limit: 120)
+                    // 延迟预加载图标，避免阻塞主线程
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        AppIconProvider.shared.preload(apps: cached, limit: 60)
+                    }
                 }
-                refreshApplications()
+                // 后台刷新应用列表
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    self.refreshApplications()
+                }
             } else {
-                AppIconProvider.shared.preload(apps: apps, limit: 120)
+                // 延迟预加载，优先保证动画流畅
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    AppIconProvider.shared.preload(apps: self.apps, limit: 60)
+                }
             }
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            self.shouldFocusSearchField = true
         }
     }
 

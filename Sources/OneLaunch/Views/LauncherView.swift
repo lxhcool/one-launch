@@ -80,16 +80,16 @@ struct LauncherView: View {
                 .padding(.top, max(geometry.safeAreaInsets.top + 26, 44))
                 .padding(.bottom, 14)
                 .opacity(viewModel.isPresented ? 1 : 0)
-                .scaleEffect(viewModel.isPresented ? 1 : 0.95)
-                .animation(.spring(response: 0.35, dampingFraction: 0.86), value: viewModel.isPresented)
+                .scaleEffect(viewModel.isPresented ? 1 : 0.92)
+                .animation(.spring(response: 0.28, dampingFraction: 0.82), value: viewModel.isPresented)
 
                 topLeadingMeta(geometry: geometry)
                     .opacity(viewModel.isPresented ? 1 : 0)
-                    .animation(.spring(response: 0.35, dampingFraction: 0.86).delay(0.03), value: viewModel.isPresented)
+                    .animation(.spring(response: 0.28, dampingFraction: 0.82).delay(0.02), value: viewModel.isPresented)
 
                 topTrailingActions(geometry: geometry)
                     .opacity(viewModel.isPresented ? 1 : 0)
-                    .animation(.spring(response: 0.35, dampingFraction: 0.86).delay(0.03), value: viewModel.isPresented)
+                    .animation(.spring(response: 0.28, dampingFraction: 0.82).delay(0.02), value: viewModel.isPresented)
 
                 Color.black.opacity(viewModel.showSettings ? 0.3 : 0)
                     .ignoresSafeArea()
@@ -343,7 +343,7 @@ struct LauncherView: View {
         .padding(.top, 24)
         .padding(.horizontal, 24)
         .padding(.bottom, 10)
-        .animation(.interactiveSpring(response: 0.26, dampingFraction: 0.86, blendDuration: 0.12), value: gridItemIDs)
+        .animation(.interactiveSpring(response: 0.22, dampingFraction: 0.82, blendDuration: 0.08), value: gridItemIDs)
     }
 
     private var canHandlePageSwipe: Bool {
