@@ -82,7 +82,6 @@ struct LauncherView: View {
 
                     content
                 }
-                .scaleEffect(viewModel.scale, anchor: .center)
                 .frame(maxWidth: contentMaxWidth, maxHeight: .infinity, alignment: .top)
                 .padding(.horizontal, 52)
                 .padding(.top, max(geometry.safeAreaInsets.top + 26, 44))
@@ -169,35 +168,66 @@ struct LauncherView: View {
 
     private func backgroundLayers(geometry: GeometryProxy) -> some View {
         ZStack {
-            if let nsImage = settingsStore.backgroundBlurImage ?? settingsStore.backgroundImage {
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: geometry.size.width, height: geometry.size.height)
-                    .clipped()
+            if viewModel.isPanelTransitioning {
+                if let nsImage = settingsStore.backgroundBlurImage ?? settingsStore.backgroundImage {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .clipped()
+                        .opacity(0.92)
 
-                // 更接近 macOS Launchpad 的透感：高斯底图 + 轻微层次渐变
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.06),
-                        Color.black.opacity(0.10)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
+                    LinearGradient(
+                        colors: [
+                            Color.black.opacity(0.20),
+                            Color.black.opacity(0.14)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                } else {
+                    Color.black.opacity(0.32)
+
+                    LinearGradient(
+                        colors: [
+                            Color.black.opacity(0.18),
+                            Color.black.opacity(0.10)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
             } else {
-                VisualEffectView(material: .fullScreenUI, blendingMode: .behindWindow)
+                if let nsImage = settingsStore.backgroundBlurImage ?? settingsStore.backgroundImage {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .clipped()
 
-                LinearGradient(
-                    colors: [
-                        Color.black.opacity(0.22),
-                        Color.black.opacity(0.14)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
+                    // 更接近 macOS Launchpad 的透感：高斯底图 + 轻微层次渐变
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.06),
+                            Color.black.opacity(0.10)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                } else {
+                    VisualEffectView(material: .fullScreenUI, blendingMode: .behindWindow)
 
-                backgroundAccent(geometry: geometry)
+                    LinearGradient(
+                        colors: [
+                            Color.black.opacity(0.22),
+                            Color.black.opacity(0.14)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+
+                    backgroundAccent(geometry: geometry)
+                }
             }
         }
         .ignoresSafeArea()

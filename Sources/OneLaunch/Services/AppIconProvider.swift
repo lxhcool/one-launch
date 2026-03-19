@@ -1,4 +1,5 @@
 import AppKit
+import Foundation
 import UniformTypeIdentifiers
 
 @MainActor
@@ -8,6 +9,8 @@ final class AppIconProvider: ObservableObject {
     @Published private(set) var cacheVersion = 0
     private var cache: [String: NSImage] = [:]
     private var inFlight: Set<String> = []
+    private var pendingPaths: [String] = []
+    private var pendingLoadWorkItem: DispatchWorkItem?
     private let placeholderIcon: NSImage
 
     private init() {
@@ -23,9 +26,9 @@ final class AppIconProvider: ObservableObject {
             return cachedImage
         }
 
-        if !inFlight.contains(path) {
-            inFlight.insert(path)
-            loadSingleIcon(path: path)
+        if !inFlight.contains(path) && !pendingPaths.contains(path) {
+            pendingPaths.append(path)
+            schedulePendingIconLoad()
         }
 
         return placeholderIcon
@@ -43,8 +46,36 @@ final class AppIconProvider: ObservableObject {
             inFlight.insert(path)
         }
 
+        loadIcons(paths: toLoadPaths)
+    }
+
+    private func schedulePendingIconLoad() {
+        guard pendingLoadWorkItem == nil else { return }
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            pendingLoadWorkItem = nil
+
+            let paths = pendingPaths
+            pendingPaths.removeAll(keepingCapacity: true)
+            guard !paths.isEmpty else { return }
+
+            for path in paths where !inFlight.contains(path) {
+                inFlight.insert(path)
+            }
+
+            let unresolved = paths.filter { cache[$0] == nil }
+            guard !unresolved.isEmpty else { return }
+            loadIcons(paths: unresolved)
+        }
+
+        pendingLoadWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: workItem)
+    }
+
+    private func loadIcons(paths: [String]) {
         Task.detached(priority: .utility) {
-            let loaded: [(String, NSImage)] = toLoadPaths.map { path in
+            let loaded: [(String, NSImage)] = paths.map { path in
                 let img = NSWorkspace.shared.icon(forFile: path)
                 img.size = NSSize(width: 64, height: 64)
                 return (path, img)
@@ -67,16 +98,6 @@ final class AppIconProvider: ObservableObject {
 
         if didChange {
             cacheVersion &+= 1
-        }
-    }
-
-    private func loadSingleIcon(path: String) {
-        Task.detached(priority: .utility) {
-            let img = NSWorkspace.shared.icon(forFile: path)
-            img.size = NSSize(width: 64, height: 64)
-            await MainActor.run {
-                AppIconProvider.shared.setCachedImages([(path, img)])
-            }
         }
     }
 }

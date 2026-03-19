@@ -34,6 +34,7 @@ enum LauncherGridItem: Identifiable, Hashable {
 final class LauncherViewModel: ObservableObject {
     @Published var isPresented = false
     @Published var scale: CGFloat = 1.0
+    @Published var isPanelTransitioning = false
     @Published var query = "" {
         didSet {
             if query != oldValue {
