@@ -75,16 +75,10 @@ struct LauncherView: View {
                 .padding(.horizontal, 52)
                 .padding(.top, max(geometry.safeAreaInsets.top + 26, 44))
                 .padding(.bottom, 14)
-                .opacity(viewModel.isPresented ? 1 : 0)
-                .animation(.easeOut(duration: 0.25), value: viewModel.isPresented)
 
                 topLeadingMeta(geometry: geometry)
-                    .opacity(viewModel.isPresented ? 1 : 0)
-                    .animation(.easeOut(duration: 0.22), value: viewModel.isPresented)
 
                 topTrailingActions(geometry: geometry)
-                    .opacity(viewModel.isPresented ? 1 : 0)
-                    .animation(.easeOut(duration: 0.22), value: viewModel.isPresented)
 
                 // 搜索面板 - 悬浮在最上层，不影响网格布局
                 if viewModel.isSearching && !viewModel.searchResults.isEmpty {

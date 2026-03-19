@@ -66,18 +66,14 @@ final class LauncherPanelController: NSObject {
 
         isAnimating = true
 
-        // 初始状态：半透明 + 轻微缩小
         panel.alphaValue = 0
-        panel.contentView?.layer?.setAffineTransform(CGAffineTransform(scaleX: 0.92, y: 0.92))
-
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.35
+            context.duration = 0.25
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().alphaValue = 1
-            panel.contentView?.layer?.setAffineTransform(.identity)
         }, completionHandler: { [weak self] in
             MainActor.assumeIsolated {
                 self?.isAnimating = false
@@ -116,20 +112,17 @@ final class LauncherPanelController: NSObject {
 
         isAnimating = true
         viewModel.isPresented = false
-        
-        // 清空搜索
-        viewModel.clearSearch()
 
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.18
+            context.duration = 0.15
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().alphaValue = 0
-            panel.contentView?.layer?.setAffineTransform(CGAffineTransform(scaleX: 0.96, y: 0.96))
         }, completionHandler: { [weak self] in
             MainActor.assumeIsolated {
                 self?.panel.orderOut(nil)
                 self?.panel.alphaValue = 1
-                self?.panel.contentView?.layer?.setAffineTransform(.identity)
+                // 动画完成后清空搜索
+                self?.viewModel.clearSearch()
                 self?.isAnimating = false
             }
         })
