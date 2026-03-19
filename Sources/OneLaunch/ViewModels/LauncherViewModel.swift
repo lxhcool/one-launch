@@ -54,6 +54,7 @@ final class LauncherViewModel: ObservableObject {
     @Published var shouldFocusSearchField = false
     @Published var showSettings = false
     @Published private(set) var filteredAppsCache: [AppItem] = []
+    @Published private(set) var gridAppsCache: [AppItem] = []
     @Published var activeFolderID: String?
     @Published var currentPage = 0
     @Published var searchSelectedIndex: Int = 0
@@ -102,8 +103,8 @@ final class LauncherViewModel: ObservableObject {
     }
 
     var gridApps: [AppItem] {
-        // 搜索时主网格仍显示全部应用（不被过滤）
-        apps
+        // 搜索时主网格仍显示全部应用（不被过滤），但保持当前排序方式。
+        gridAppsCache
     }
 
     var folderDisplays: [FolderDisplay] {
@@ -184,6 +185,7 @@ final class LauncherViewModel: ObservableObject {
 
         if shouldPrimeVisibleApps {
             filteredAppsCache = appsCopy
+            gridAppsCache = appsCopy
         }
 
         // 搜索时使用防抖，减少频繁计算
@@ -196,13 +198,28 @@ final class LauncherViewModel: ObservableObject {
             guard let self, !Task.isCancelled else { return }
 
             let result = await Task.detached(priority: .userInitiated) {
-                LauncherViewModel.computeFilteredApps(apps: appsCopy, query: queryCopy, sortMode: sortMode, manualOrder: manualOrder)
+                let filtered = LauncherViewModel.computeFilteredApps(
+                    apps: appsCopy,
+                    query: queryCopy,
+                    sortMode: sortMode,
+                    manualOrder: manualOrder
+                )
+                let grid = hasQuery
+                    ? LauncherViewModel.computeFilteredApps(
+                        apps: appsCopy,
+                        query: "",
+                        sortMode: sortMode,
+                        manualOrder: manualOrder
+                    )
+                    : filtered
+                return (filtered: filtered, grid: grid)
             }.value
 
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard self.apps == appsCopy && self.query == queryCopy else { return }
-                self.filteredAppsCache = result
+                self.filteredAppsCache = result.filtered
+                self.gridAppsCache = result.grid
             }
         }
     }
@@ -544,9 +561,11 @@ final class LauncherViewModel: ObservableObject {
         let orderedApps = order.compactMap { appByID[$0] }
         let remainingApps = apps.filter { !order.contains($0.id) }
 
-        filteredAppsCache = orderedApps + remainingApps.sorted {
+        let sorted = orderedApps + remainingApps.sorted {
             $0.name.localizedStandardCompare($1.name) == .orderedAscending
         }
+        filteredAppsCache = sorted
+        gridAppsCache = sorted
     }
 
     func resolveFolders(for visibleApps: [AppItem]) -> [FolderDisplay] {
