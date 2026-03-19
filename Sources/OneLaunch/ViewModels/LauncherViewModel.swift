@@ -167,9 +167,11 @@ final class LauncherViewModel: ObservableObject {
         let hasQuery = !queryCopy.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
         // 仅在首屏/数据源发生明显变化时先用原始列表兜底，避免拖拽排序时先闪回原始顺序。
+        // 搜索清空时不再立即重置，保持当前结果显示，等待异步计算完成后再更新
         let shouldPrimeVisibleApps = !hasQuery
             && !appsCopy.isEmpty
-            && (filteredAppsCache.isEmpty || (sortMode != .manual && filteredAppsCache.count != appsCopy.count))
+            && filteredAppsCache.isEmpty
+            && (sortMode != .manual && filteredAppsCache.count != appsCopy.count)
 
         if shouldPrimeVisibleApps {
             filteredAppsCache = appsCopy

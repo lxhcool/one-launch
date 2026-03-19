@@ -962,7 +962,7 @@ struct LauncherView: View {
             }
         }
         .padding(.horizontal, 20)
-        .frame(width: 520, height: 54)
+        .frame(width: 520, height: 62)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(.ultraThinMaterial)
