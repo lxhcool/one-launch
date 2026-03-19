@@ -66,19 +66,28 @@ final class LauncherPanelController: NSObject {
 
         isAnimating = true
 
+        // 设置初始状态：透明 + 列表区域轻微缩小
         panel.alphaValue = 0
+        viewModel.scale = 0.95
+        
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
+        // 窗口淡入动画（0.25s）
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.25
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().alphaValue = 1
-        }, completionHandler: { [weak self] in
-            MainActor.assumeIsolated {
-                self?.isAnimating = false
-            }
         })
+        
+        // 列表区域缩放动画
+        withAnimation(.easeOut(duration: 0.25)) {
+            viewModel.scale = 1.0
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            self?.isAnimating = false
+        }
 
         viewModel.isPresented = true
         viewModel.deferredPrepare()
@@ -113,14 +122,21 @@ final class LauncherPanelController: NSObject {
         isAnimating = true
         viewModel.isPresented = false
 
+        // 列表区域缩小动画
+        withAnimation(.easeIn(duration: 0.2)) {
+            viewModel.scale = 0.95
+        }
+
+        // 窗口淡出动画（0.25s）
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.15
+            context.duration = 0.25
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().alphaValue = 0
         }, completionHandler: { [weak self] in
             MainActor.assumeIsolated {
                 self?.panel.orderOut(nil)
                 self?.panel.alphaValue = 1
+                self?.viewModel.scale = 1.0
                 // 动画完成后清空搜索
                 self?.viewModel.clearSearch()
                 self?.isAnimating = false
