@@ -8,6 +8,8 @@ struct SearchField: NSViewRepresentable {
 
     let placeholder: String
     let onCommit: () -> Void
+    var onMoveUp: (() -> Void)? = nil
+    var onMoveDown: (() -> Void)? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -55,7 +57,7 @@ struct SearchField: NSViewRepresentable {
             DispatchQueue.main.async {
                 field.window?.makeFirstResponder(field)
                 (field.currentEditor() as? NSTextView)?.insertionPointColor = NSColor.white
-                shouldFocus = false
+                self.shouldFocus = false
             }
         }
     }
@@ -97,12 +99,23 @@ struct SearchField: NSViewRepresentable {
                 guard !textView.hasMarkedText() else {
                     return false
                 }
-
                 parent.onCommit()
+                return true
+            }
+
+            if commandSelector == #selector(NSResponder.moveUp(_:)) {
+                parent.onMoveUp?()
+                return true
+            }
+
+            if commandSelector == #selector(NSResponder.moveDown(_:)) {
+                parent.onMoveDown?()
                 return true
             }
 
             return false
         }
     }
+
+
 }

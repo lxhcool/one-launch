@@ -38,6 +38,7 @@ final class LauncherViewModel: ObservableObject {
             if query != oldValue {
                 activeFolderID = nil
                 currentPage = 0
+                searchSelectedIndex = 0
             }
             updateFilteredAppsCache()
         }
@@ -54,9 +55,11 @@ final class LauncherViewModel: ObservableObject {
     @Published private(set) var filteredAppsCache: [AppItem] = []
     @Published var activeFolderID: String?
     @Published var currentPage = 0
+    @Published var searchSelectedIndex: Int = 0
 
     let settingsStore: SettingsStore
     let itemsPerPage = 36
+    let maxSearchResults = 8
     private let recentAppsStore = RecentAppsStore()
     private var cancellables = Set<AnyCancellable>()
     private var hasPreparedData = false
@@ -92,11 +95,14 @@ final class LauncherViewModel: ObservableObject {
         return filteredAppsCache.first
     }
 
+    var searchResults: [AppItem] {
+        guard isSearching else { return [] }
+        return Array(filteredAppsCache.prefix(maxSearchResults))
+    }
+
     var gridApps: [AppItem] {
-        guard let spotlightResult else {
-            return filteredAppsCache
-        }
-        return filteredAppsCache.filter { $0.id != spotlightResult.id }
+        // 搜索时主网格仍显示全部应用（不被过滤）
+        apps
     }
 
     var folderDisplays: [FolderDisplay] {
@@ -105,9 +111,6 @@ final class LauncherViewModel: ObservableObject {
 
     var gridItems: [LauncherGridItem] {
         let apps = gridApps
-        guard !isSearching else {
-            return apps.map { .app($0) }
-        }
 
         let folderMap = Dictionary(
             folderDisplays.flatMap { display in
@@ -159,12 +162,17 @@ final class LauncherViewModel: ObservableObject {
         return "搜索结果 \(filteredAppsCache.count) 个"
     }
 
+    private var searchDebounceTask: Task<Void, Never>?
+
     private func updateFilteredAppsCache() {
         let appsCopy = apps
         let queryCopy = query
         let sortMode = settingsStore.sortMode
         let manualOrder = settingsStore.manualAppOrder
         let hasQuery = !queryCopy.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        // 取消之前的搜索任务
+        searchDebounceTask?.cancel()
 
         // 仅在首屏/数据源发生明显变化时先用原始列表兜底，避免拖拽排序时先闪回原始顺序。
         // 搜索清空时不再立即重置，保持当前结果显示，等待异步计算完成后再更新
@@ -177,13 +185,23 @@ final class LauncherViewModel: ObservableObject {
             filteredAppsCache = appsCopy
         }
 
-        Task.detached(priority: .userInitiated) {
-            let result = LauncherViewModel.computeFilteredApps(apps: appsCopy, query: queryCopy, sortMode: sortMode, manualOrder: manualOrder)
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                if self.apps == appsCopy && self.query == queryCopy {
-                    self.filteredAppsCache = result
-                }
+        // 搜索时使用防抖，减少频繁计算
+        let debounceInterval: TimeInterval = hasQuery ? 0.05 : 0
+
+        searchDebounceTask = Task { [weak self] in
+            if debounceInterval > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(debounceInterval * 1_000_000_000))
+            }
+            guard let self, !Task.isCancelled else { return }
+
+            let result = await Task.detached(priority: .userInitiated) {
+                LauncherViewModel.computeFilteredApps(apps: appsCopy, query: queryCopy, sortMode: sortMode, manualOrder: manualOrder)
+            }.value
+
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard self.apps == appsCopy && self.query == queryCopy else { return }
+                self.filteredAppsCache = result
             }
         }
     }
@@ -305,11 +323,27 @@ final class LauncherViewModel: ObservableObject {
     }
 
     func launchFirstResult() {
-        guard let app = filteredApps.first else {
-            return
-        }
+        guard !searchResults.isEmpty else { return }
+        let index = max(0, min(searchSelectedIndex, searchResults.count - 1))
+        launch(searchResults[index])
+    }
 
-        launch(app)
+    func selectPreviousSearchResult() {
+        guard !searchResults.isEmpty else { return }
+        if searchSelectedIndex > 0 {
+            searchSelectedIndex -= 1
+        } else {
+            searchSelectedIndex = searchResults.count - 1
+        }
+    }
+
+    func selectNextSearchResult() {
+        guard !searchResults.isEmpty else { return }
+        if searchSelectedIndex < searchResults.count - 1 {
+            searchSelectedIndex += 1
+        } else {
+            searchSelectedIndex = 0
+        }
     }
 
     func launch(_ app: AppItem) {

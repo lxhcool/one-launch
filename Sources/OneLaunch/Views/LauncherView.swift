@@ -69,10 +69,6 @@ struct LauncherView: View {
                 VStack(spacing: 28) {
                     header
 
-                    if let spotlightResult = viewModel.spotlightResult {
-                        spotlightCard(for: spotlightResult)
-                    }
-
                     content
                 }
                 .frame(maxWidth: contentMaxWidth, maxHeight: .infinity, alignment: .top)
@@ -80,16 +76,27 @@ struct LauncherView: View {
                 .padding(.top, max(geometry.safeAreaInsets.top + 26, 44))
                 .padding(.bottom, 14)
                 .opacity(viewModel.isPresented ? 1 : 0)
-                .scaleEffect(viewModel.isPresented ? 1 : 0.92)
-                .animation(.spring(response: 0.28, dampingFraction: 0.82), value: viewModel.isPresented)
+                .animation(.easeOut(duration: 0.25), value: viewModel.isPresented)
 
                 topLeadingMeta(geometry: geometry)
                     .opacity(viewModel.isPresented ? 1 : 0)
-                    .animation(.spring(response: 0.28, dampingFraction: 0.82).delay(0.02), value: viewModel.isPresented)
+                    .animation(.easeOut(duration: 0.22), value: viewModel.isPresented)
 
                 topTrailingActions(geometry: geometry)
                     .opacity(viewModel.isPresented ? 1 : 0)
-                    .animation(.spring(response: 0.28, dampingFraction: 0.82).delay(0.02), value: viewModel.isPresented)
+                    .animation(.easeOut(duration: 0.22), value: viewModel.isPresented)
+
+                // 搜索面板 - 悬浮在最上层，不影响网格布局
+                if viewModel.isSearching && !viewModel.searchResults.isEmpty {
+                    searchResultsPanel
+                        .position(
+                            x: geometry.size.width / 2,
+                            y: max(geometry.safeAreaInsets.top + 26, 44) + 40 + 62 + 16 + 180
+                        )
+                        .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+                        .animation(.easeOut(duration: 0.2), value: viewModel.isSearching)
+                        .zIndex(100)
+                }
 
                 Color.black.opacity(viewModel.showSettings ? 0.3 : 0)
                     .ignoresSafeArea()
@@ -835,63 +842,6 @@ struct LauncherView: View {
         }
     }
 
-    @State private var spotlightHovered = false
-
-    private func spotlightCard(for app: AppItem) -> some View {
-        Button {
-            onClose()
-            viewModel.launch(app)
-        } label: {
-            HStack(spacing: 12) {
-                Image(nsImage: AppIconProvider.shared.icon(for: app))
-                    .resizable()
-                    .frame(width: 44, height: 44)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .shadow(color: Color.black.opacity(spotlightHovered ? 0.2 : 0.1), radius: spotlightHovered ? 6 : 3, x: 0, y: spotlightHovered ? 3 : 1)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(app.name)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.primary)
-
-                    Text(app.bundleIdentifier ?? app.url.path)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Text("↵ 打开")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(Color.white.opacity(spotlightHovered ? 0.12 : 0.08))
-                    )
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .frame(width: 520)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Color.white.opacity(spotlightHovered ? 0.18 : 0.1), lineWidth: spotlightHovered ? 1.5 : 1)
-                    )
-            )
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.15)) {
-                spotlightHovered = hovering
-            }
-        }
-    }
-
     private func topLeadingMeta(geometry: GeometryProxy) -> some View {
         HStack(spacing: 8) {
             // Status badge
@@ -948,6 +898,12 @@ struct LauncherView: View {
                 onCommit: {
                     onClose()
                     viewModel.launchFirstResult()
+                },
+                onMoveUp: {
+                    viewModel.selectPreviousSearchResult()
+                },
+                onMoveDown: {
+                    viewModel.selectNextSearchResult()
                 }
             )
 
@@ -969,20 +925,113 @@ struct LauncherView: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .stroke(
-                            isSearchFocused
+                            isSearchFocused || viewModel.isSearching
                                 ? Color.white.opacity(0.35)
                                 : Color.white.opacity(0.12),
-                            lineWidth: isSearchFocused ? 1.5 : 1
+                            lineWidth: (isSearchFocused || viewModel.isSearching) ? 1.5 : 1
                         )
                 )
                 .shadow(
-                    color: Color.black.opacity(isSearchFocused ? 0.25 : 0.15),
-                    radius: isSearchFocused ? 20 : 12,
+                    color: Color.black.opacity((isSearchFocused || viewModel.isSearching) ? 0.25 : 0.15),
+                    radius: (isSearchFocused || viewModel.isSearching) ? 20 : 12,
                     x: 0,
-                    y: isSearchFocused ? 8 : 4
+                    y: (isSearchFocused || viewModel.isSearching) ? 8 : 4
                 )
         )
         .animation(.easeOut(duration: 0.2), value: isSearchFocused)
+        .animation(.easeOut(duration: 0.2), value: viewModel.isSearching)
+    }
+
+    @State private var searchScrollProxy: ScrollViewProxy? = nil
+
+    private var searchResultsPanel: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 2) {
+                    ForEach(Array(viewModel.searchResults.enumerated()), id: \.element.id) { index, app in
+                        searchResultRow(for: app, index: index)
+                            .id("row-\(index)")
+                    }
+                }
+                .padding(8)
+            }
+            .onChange(of: viewModel.searchSelectedIndex) { _, newIndex in
+                withAnimation(.easeOut(duration: 0.15)) {
+                    proxy.scrollTo("row-\(newIndex)", anchor: .center)
+                }
+            }
+        }
+        .frame(width: 520)
+        .frame(maxHeight: 360)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                )
+                .shadow(
+                    color: Color.black.opacity(0.2),
+                    radius: 24,
+                    x: 0,
+                    y: 12
+                )
+        )
+    }
+
+    private func searchResultRow(for app: AppItem, index: Int) -> some View {
+        let isSelected = viewModel.searchSelectedIndex == index
+
+        return Button {
+            onClose()
+            viewModel.launch(app)
+        } label: {
+            HStack(spacing: 12) {
+                Image(nsImage: AppIconProvider.shared.icon(for: app))
+                    .resizable()
+                    .frame(width: 36, height: 36)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Color.white.opacity(isSelected ? 0.4 : 0), lineWidth: 2)
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(app.name)
+                        .font(.system(size: 14, weight: isSelected ? .bold : .medium))
+
+                    Text(app.bundleIdentifier ?? app.url.lastPathComponent)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                if isSelected {
+                    Text("↵")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(Color.white.opacity(0.2))
+                        )
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isSelected ? Color.white.opacity(0.22) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(isSelected ? Color.white.opacity(0.3) : Color.clear, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
 
