@@ -197,6 +197,8 @@ struct LauncherView: View {
         .onTapGesture {}
     }
 
+    @State private var hoveredButton: String? = nil
+
     private func topTrailingActions(geometry: GeometryProxy) -> some View {
         HStack(spacing: 8) {
             ForEach([
@@ -208,14 +210,23 @@ struct LauncherView: View {
                     Image(systemName: icon)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.primary)
-                        .frame(width: 34, height: 34)
+                        .frame(width: 36, height: 36)
                         .background(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Color.white.opacity(0.06))
+                                .fill(Color.white.opacity(hoveredButton == icon ? 0.12 : 0.06))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .stroke(Color.white.opacity(hoveredButton == icon ? 0.2 : 0.08), lineWidth: 1)
+                                )
                         )
                 }
                 .buttonStyle(.plain)
                 .help(help)
+                .onHover { hovering in
+                    withAnimation(.easeOut(duration: 0.1)) {
+                        hoveredButton = hovering ? icon : nil
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -824,6 +835,8 @@ struct LauncherView: View {
         }
     }
 
+    @State private var spotlightHovered = false
+
     private func spotlightCard(for app: AppItem) -> some View {
         Button {
             onClose()
@@ -834,6 +847,7 @@ struct LauncherView: View {
                     .resizable()
                     .frame(width: 44, height: 44)
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .shadow(color: Color.black.opacity(spotlightHovered ? 0.2 : 0.1), radius: spotlightHovered ? 6 : 3, x: 0, y: spotlightHovered ? 3 : 1)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(app.name)
@@ -855,7 +869,7 @@ struct LauncherView: View {
                     .padding(.vertical, 4)
                     .background(
                         Capsule()
-                            .fill(Color.white.opacity(0.08))
+                            .fill(Color.white.opacity(spotlightHovered ? 0.12 : 0.08))
                     )
             }
             .padding(.horizontal, 16)
@@ -866,11 +880,16 @@ struct LauncherView: View {
                     .fill(.ultraThinMaterial)
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                            .stroke(Color.white.opacity(spotlightHovered ? 0.18 : 0.1), lineWidth: spotlightHovered ? 1.5 : 1)
                     )
             )
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.15)) {
+                spotlightHovered = hovering
+            }
+        }
     }
 
     private func topLeadingMeta(geometry: GeometryProxy) -> some View {
@@ -1055,15 +1074,22 @@ struct LauncherView: View {
         .onTapGesture {}
     }
 
+    @State private var hoveredPage: Int? = nil
+
     private var pageIndicator: some View {
         HStack(spacing: 6) {
             ForEach(0..<viewModel.totalPages, id: \.self) { page in
                 Capsule()
-                    .fill(page == viewModel.currentPage ? Color.white : Color.white.opacity(0.35))
-                    .frame(width: page == viewModel.currentPage ? 18 : 6, height: 6)
+                    .fill(page == viewModel.currentPage ? Color.white : Color.white.opacity(hoveredPage == page ? 0.6 : 0.35))
+                    .frame(width: page == viewModel.currentPage ? 18 : (hoveredPage == page ? 8 : 6), height: 6)
                     .onTapGesture {
                         withAnimation(.easeOut(duration: 0.2)) {
                             viewModel.currentPage = page
+                        }
+                    }
+                    .onHover { hovering in
+                        withAnimation(.easeOut(duration: 0.1)) {
+                            hoveredPage = hovering ? page : nil
                         }
                     }
             }

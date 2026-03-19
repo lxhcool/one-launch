@@ -59,7 +59,7 @@ final class SettingsStore: ObservableObject {
 
     @Published var backgroundBlurRadius: Double {
         didSet {
-            let clamped = min(36, max(8, backgroundBlurRadius))
+            let clamped = min(36, max(0, backgroundBlurRadius))
             if clamped != backgroundBlurRadius {
                 backgroundBlurRadius = clamped
                 return
@@ -108,7 +108,7 @@ final class SettingsStore: ObservableObject {
 
         self.backgroundImagePath = defaults.string(forKey: Key.backgroundImagePath)
         let storedBlurRadius = defaults.double(forKey: Key.backgroundBlurRadius)
-        self.backgroundBlurRadius = storedBlurRadius > 0 ? min(36, max(8, storedBlurRadius)) : 18
+        self.backgroundBlurRadius = storedBlurRadius > 0 ? min(36, max(0, storedBlurRadius)) : 18
         self.manualAppOrder = defaults.stringArray(forKey: Key.manualAppOrder) ?? []
         self.appFolders = Self.loadFolders(from: defaults)
         self.launchAtLogin = SMAppService.mainApp.status == .enabled

@@ -21,17 +21,14 @@ struct AppCardView: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            // Icon with simple hover effect
             Image(nsImage: AppIconProvider.shared.icon(for: app))
                 .resizable()
                 .interpolation(.high)
                 .frame(width: iconSize, height: iconSize)
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                .shadow(color: Color.black.opacity(0.2), radius: isHovered ? 10 : 4, x: 0, y: isHovered ? 4 : 2)
-                .scaleEffect(isHovered ? 1.05 : 1)
-                .animation(.easeOut(duration: 0.15), value: isHovered)
+                .shadow(color: Color.black.opacity(isHovered ? 0.25 : 0.15), radius: isHovered ? 8 : 4, x: 0, y: isHovered ? 4 : 2)
+                .scaleEffect(isHovered ? 1.04 : 1)
 
-            // App name
             Text(app.name)
                 .font(.system(size: max(10, iconSize * 0.155), weight: .medium))
                 .foregroundStyle(.primary)
@@ -45,7 +42,9 @@ struct AppCardView: View {
         .contentShape(Rectangle())
         .onTapGesture(perform: action)
         .onHover { hovering in
-            isHovered = hovering
+            withAnimation(.easeOut(duration: 0.12)) {
+                isHovered = hovering
+            }
         }
         .help(app.bundleIdentifier ?? app.url.path)
     }

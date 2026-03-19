@@ -345,14 +345,51 @@ struct SettingsRow<Content: View>: View {
     }
 }
 
-struct CustomSlider: View {
+struct CustomSlider: NSViewRepresentable {
     @Binding var value: Double
     let range: ClosedRange<Double>
     let step: Double
 
-    var body: some View {
-        Slider(value: $value, in: range, step: step)
-            .tint(Color.white.opacity(0.4))
+    func makeNSView(context: Context) -> NSSlider {
+        let slider = NSSlider()
+        slider.minValue = range.lowerBound
+        slider.maxValue = range.upperBound
+        slider.doubleValue = value
+        slider.allowsTickMarkValuesOnly = false
+        slider.numberOfTickMarks = 0
+        slider.target = context.coordinator
+        slider.action = #selector(Coordinator.valueChanged(_:))
+        slider.isContinuous = true
+
+        // 自定义样式
+        slider.appearance = NSAppearance(named: .aqua)
+
+        return slider
+    }
+
+    func updateNSView(_ nsView: NSSlider, context: Context) {
+        nsView.doubleValue = value
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(value: $value, step: step)
+    }
+
+    class Coordinator: NSObject {
+        @Binding var value: Double
+        let step: Double
+
+        init(value: Binding<Double>, step: Double) {
+            self._value = value
+            self.step = step
+        }
+
+        @MainActor @objc func valueChanged(_ sender: NSSlider) {
+            // 应用步长
+            let rawValue = sender.doubleValue
+            let steppedValue = round((rawValue - sender.minValue) / step) * step + sender.minValue
+            value = steppedValue
+        }
     }
 }
 

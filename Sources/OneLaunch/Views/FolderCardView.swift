@@ -64,7 +64,6 @@ struct FolderCardView: View {
                     }
                 }
                 .scaleEffect(isHovered ? 1.02 : 1)
-                .animation(.easeOut(duration: 0.15), value: isHovered)
             }
             .frame(width: cardWidth)
 
@@ -80,7 +79,9 @@ struct FolderCardView: View {
         .contentShape(Rectangle())
         .onTapGesture(perform: onOpenFolder)
         .onHover { hovering in
-            isHovered = hovering
+            withAnimation(.easeOut(duration: 0.12)) {
+                isHovered = hovering
+            }
         }
         .help(apps.map(\.name).joined(separator: "\n"))
     }
