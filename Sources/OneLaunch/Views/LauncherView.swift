@@ -22,6 +22,8 @@ struct LauncherView: View {
     @State private var pageOffset: CGFloat = 0
     @State private var scrollEventMonitor: Any?
     @State private var accumulatedHorizontalScroll: CGFloat = 0
+    @State private var shouldRenderAdjacentPages = false
+    @State private var adjacentPagesWorkItem: DispatchWorkItem?
 
     private var effectiveIconSize: Double {
         settingsStore.iconSize + 12
@@ -52,6 +54,10 @@ struct LauncherView: View {
 
     private var pageTransitionAnimation: Animation {
         .timingCurve(0.22, 0.61, 0.36, 1, duration: 0.24)
+    }
+
+    private var renderedPageDistance: Int {
+        shouldRenderAdjacentPages ? 1 : 0
     }
 
     var body: some View {
@@ -133,9 +139,15 @@ struct LauncherView: View {
         .background(Color.clear)
         .onAppear {
             installTrackpadMonitorIfNeeded()
+            updateAdjacentPageRendering(for: viewModel.isPresented)
         }
         .onDisappear {
+            adjacentPagesWorkItem?.cancel()
+            adjacentPagesWorkItem = nil
             removeTrackpadMonitor()
+        }
+        .onChange(of: viewModel.isPresented) { _, isPresented in
+            updateAdjacentPageRendering(for: isPresented)
         }
         .onExitCommand {
             if viewModel.showSettings {
@@ -256,7 +268,7 @@ struct LauncherView: View {
                 VStack(spacing: 0) {
                     HStack(spacing: 0) {
                         ForEach(0..<viewModel.totalPages, id: \.self) { page in
-                            if abs(page - viewModel.currentPage) <= 1 {
+                            if abs(page - viewModel.currentPage) <= renderedPageDistance {
                                 VStack(spacing: 0) {
                                     LazyVGrid(columns: columns, spacing: 18) {
                                         ForEach(viewModel.gridItemsForPage(page)) { item in
@@ -459,6 +471,23 @@ struct LauncherView: View {
             onClose()
             viewModel.launch(app)
         }
+    }
+
+    private func updateAdjacentPageRendering(for isPresented: Bool) {
+        adjacentPagesWorkItem?.cancel()
+        adjacentPagesWorkItem = nil
+
+        guard isPresented else {
+            shouldRenderAdjacentPages = false
+            return
+        }
+
+        shouldRenderAdjacentPages = false
+        let workItem = DispatchWorkItem {
+            shouldRenderAdjacentPages = true
+        }
+        adjacentPagesWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.26, execute: workItem)
     }
 
     private func folderGridItem(for folder: FolderDisplay) -> some View {

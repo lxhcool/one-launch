@@ -52,7 +52,7 @@ struct FolderCardView: View {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                             .stroke(Color.white.opacity(isHovered ? 0.3 : 0.15), lineWidth: isHovered ? 1.5 : 1)
                     )
-                    .shadow(color: Color.black.opacity(0.15), radius: 4, x: 0, y: 2)
+                    .shadow(color: Color.black.opacity(isHovered ? 0.2 : 0), radius: isHovered ? 6 : 0, x: 0, y: isHovered ? 3 : 0)
 
                 VStack(spacing: tileGap) {
                     ForEach(0..<previewGridCount, id: \.self) { row in

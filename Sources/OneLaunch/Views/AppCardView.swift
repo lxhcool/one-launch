@@ -27,7 +27,7 @@ struct AppCardView: View {
                 .interpolation(.high)
                 .frame(width: iconSize, height: iconSize)
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                .shadow(color: Color.black.opacity(isHovered ? 0.25 : 0.15), radius: isHovered ? 8 : 4, x: 0, y: isHovered ? 4 : 2)
+                .shadow(color: Color.black.opacity(isHovered ? 0.22 : 0), radius: isHovered ? 8 : 0, x: 0, y: isHovered ? 4 : 0)
                 .scaleEffect(isHovered ? 1.04 : 1)
 
             Text(app.name)
