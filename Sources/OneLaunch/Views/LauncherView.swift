@@ -4,6 +4,7 @@ import SwiftUI
 struct LauncherView: View {
     @ObservedObject var viewModel: LauncherViewModel
     @ObservedObject var settingsStore: SettingsStore
+    @ObservedObject private var iconProvider = AppIconProvider.shared
     let onClose: () -> Void
     @State private var gridFrames: [String: GridDropFrameEntry] = [:]
     @State private var draggingAppID: String?
@@ -72,7 +73,6 @@ struct LauncherView: View {
                     content
                 }
                 .scaleEffect(viewModel.scale, anchor: .center)
-                .animation(.easeOut(duration: 0.25), value: viewModel.scale)
                 .frame(maxWidth: contentMaxWidth, maxHeight: .infinity, alignment: .top)
                 .padding(.horizontal, 52)
                 .padding(.top, max(geometry.safeAreaInsets.top + 26, 44))
@@ -792,7 +792,7 @@ struct LauncherView: View {
                         ForEach(0..<2, id: \.self) { column in
                             let index = row * 2 + column
                             if folder.apps.indices.contains(index) {
-                                Image(nsImage: AppIconProvider.shared.icon(for: folder.apps[index]))
+                                Image(nsImage: iconProvider.icon(for: folder.apps[index]))
                                     .resizable()
                                     .scaledToFit()
                                     .frame(width: tileSize, height: tileSize)
@@ -983,7 +983,7 @@ struct LauncherView: View {
             viewModel.launch(app)
         } label: {
             HStack(spacing: 12) {
-                Image(nsImage: AppIconProvider.shared.icon(for: app))
+                Image(nsImage: iconProvider.icon(for: app))
                     .resizable()
                     .frame(width: 36, height: 36)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))

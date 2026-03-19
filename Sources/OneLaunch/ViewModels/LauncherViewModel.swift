@@ -280,28 +280,42 @@ final class LauncherViewModel: ObservableObject {
             self.shouldFocusSearchField = true
         }
 
-        if !hasPreparedData {
-            hasPreparedData = true
-
-            if apps.isEmpty {
-                // 先显示缓存数据，让用户立即看到界面
-                if let cached = AppScanner().loadCachedApplications() {
-                    apps = cached
-                    // 延迟预加载图标，避免阻塞主线程
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        AppIconProvider.shared.preload(apps: cached, limit: 60)
-                    }
-                }
-                // 后台刷新应用列表
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    self.refreshApplications()
-                }
-            } else {
+        guard !hasPreparedData else {
+            if !apps.isEmpty {
                 // 延迟预加载，优先保证动画流畅
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     AppIconProvider.shared.preload(apps: self.apps, limit: 60)
                 }
             }
+            return
+        }
+
+        hasPreparedData = true
+
+        if apps.isEmpty {
+            // 异步读取缓存，避免首次展示阻塞主线程
+            Task.detached(priority: .userInitiated) { [weak self] in
+                let cached = AppScanner().loadCachedApplications()
+                guard let self, let cached, !cached.isEmpty else { return }
+                await MainActor.run {
+                    guard self.apps.isEmpty else { return }
+                    self.apps = cached
+                    // 延迟预加载图标，避免阻塞主线程
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        AppIconProvider.shared.preload(apps: cached, limit: 60)
+                    }
+                }
+            }
+        } else {
+            // 延迟预加载，优先保证动画流畅
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                AppIconProvider.shared.preload(apps: self.apps, limit: 60)
+            }
+        }
+
+        // 后台刷新应用列表
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.refreshApplications()
         }
     }
 

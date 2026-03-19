@@ -8,6 +8,7 @@ struct FolderCardView: View {
     let onLaunchApp: (AppItem) -> Void
 
     @State private var isHovered = false
+    @ObservedObject private var iconProvider = AppIconProvider.shared
 
     private let previewGridCount = 3
     private var entryTileIndex: Int { previewGridCount * previewGridCount - 1 }
@@ -105,7 +106,7 @@ struct FolderCardView: View {
         } else if clickablePreviewApps.indices.contains(index) {
             let app = clickablePreviewApps[index]
             Button(action: { onLaunchApp(app) }) {
-                Image(nsImage: AppIconProvider.shared.icon(for: app))
+                Image(nsImage: iconProvider.icon(for: app))
                     .resizable()
                     .scaledToFit()
                     .frame(width: tileSize, height: tileSize)

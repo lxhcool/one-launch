@@ -6,6 +6,7 @@ struct AppCardView: View {
     let action: () -> Void
 
     @State private var isHovered = false
+    @ObservedObject private var iconProvider = AppIconProvider.shared
 
     private var cornerRadius: Double {
         iconSize * 0.18
@@ -21,7 +22,7 @@ struct AppCardView: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            Image(nsImage: AppIconProvider.shared.icon(for: app))
+            Image(nsImage: iconProvider.icon(for: app))
                 .resizable()
                 .interpolation(.high)
                 .frame(width: iconSize, height: iconSize)

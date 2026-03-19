@@ -8,6 +8,7 @@ final class LauncherPanelController: NSObject {
     private var lastScreenFrame: NSRect?
     private var hasPrewarmed = false
     private var isAnimating = false
+    private var hasShownPanel = false
 
     var isVisible: Bool {
         panel.isVisible
@@ -77,6 +78,22 @@ final class LauncherPanelController: NSObject {
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
+        // 首次展示只做淡入，避免大列表缩放导致掉帧观感。
+        if !hasShownPanel {
+            hasShownPanel = true
+            viewModel.scale = 1.0
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.16
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                panel.animator().alphaValue = 1
+            }, completionHandler: { [weak self] in
+                MainActor.assumeIsolated {
+                    self?.isAnimating = false
+                }
+            })
+            return
+        }
+
         // 统一的动画：窗口淡入 + 列表缩放
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.25
@@ -92,9 +109,6 @@ final class LauncherPanelController: NSObject {
                 self?.isAnimating = false
             }
         })
-
-        viewModel.isPresented = true
-        viewModel.deferredPrepare()
     }
 
     func prewarmIfNeeded() {

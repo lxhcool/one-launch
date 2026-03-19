@@ -7,28 +7,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var statusMenu: NSMenu?
     private var hotKeyService: HotKeyService?
+    private var launchPrewarmWorkItem: DispatchWorkItem?
+    private var handledInitialActivation = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         configureMainMenu()
         configureStatusItem()
         configureHotKey()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            self?.launcherPanelController.prewarmIfNeeded()
-        }
-        // 不自动打开界面，仅后台运行；用户通过快捷键 / 状态栏 / 菜单打开
-        preloadIconsInBackground()
+        scheduleDeferredPrewarm()
     }
 
-    /// 启动时在后台预加载应用图标，首次打开面板时减少卡顿
-    private func preloadIconsInBackground() {
-        Task.detached(priority: .utility) {
-            let list = AppScanner().loadCachedApplications()
-            if let apps = list, !apps.isEmpty {
-                await MainActor.run {
-                    AppIconProvider.shared.preload(apps: apps, limit: 80)
-                }
-            }
-        }
+    func applicationDidBecomeActive(_ notification: Notification) {
+        guard !handledInitialActivation else { return }
+        handledInitialActivation = true
+        launchPrewarmWorkItem?.cancel()
+        launcherPanelController.show()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -125,5 +118,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appMenu.items.forEach { $0.target = self }
         appMenuItem.submenu = appMenu
         NSApp.mainMenu = mainMenu
+    }
+
+    private func scheduleDeferredPrewarm() {
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.launcherPanelController.prewarmIfNeeded()
+        }
+        launchPrewarmWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: workItem)
     }
 }
