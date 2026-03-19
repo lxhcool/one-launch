@@ -6,7 +6,7 @@ struct SettingsView: View {
     let onClose: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 28) {
             HStack {
                 Text("设置")
                     .font(.system(size: 20, weight: .bold))
@@ -40,6 +40,10 @@ struct SettingsView: View {
 
             Divider().overlay(Color.white.opacity(0.1))
 
+            blurSection
+
+            Divider().overlay(Color.white.opacity(0.1))
+
             launchAtLoginSection
 
             Spacer(minLength: 0)
@@ -57,8 +61,8 @@ struct SettingsView: View {
                 .background(Color.white.opacity(0.08), in: Capsule())
             }
         }
-        .padding(28)
-        .frame(width: 420, height: 620)
+        .padding(34)
+        .frame(width: 540, height: 780)
         .background(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(.ultraThinMaterial)
@@ -88,7 +92,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
 
                 Slider(value: $settingsStore.iconSize, in: 56...112, step: 4)
-                    .tint(.white.opacity(0.6))
+                    .tint(.primary.opacity(0.7))
 
                 Image(systemName: "app.fill")
                     .font(.system(size: 20))
@@ -147,7 +151,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
 
                 Slider(value: $settingsStore.listContentWidth, in: 1180...1720, step: 20)
-                    .tint(.white.opacity(0.6))
+                    .tint(.primary.opacity(0.7))
 
                 Image(systemName: "rectangle.landscape")
                     .font(.system(size: 16))
@@ -205,7 +209,7 @@ struct SettingsView: View {
 
                     if settingsStore.backgroundImagePath != nil {
                         Button("移除背景") {
-                            settingsStore.backgroundImagePath = nil
+                            settingsStore.clearBackgroundImage()
                         }
                         .buttonStyle(.plain)
                         .font(.system(size: 12, weight: .medium))
@@ -234,6 +238,30 @@ struct SettingsView: View {
         }
     }
 
+    private var blurSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionLabel("背景模糊半径")
+
+            HStack(spacing: 16) {
+                Image(systemName: "drop.halffull")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+
+                Slider(value: $settingsStore.backgroundBlurRadius, in: 8...36, step: 1)
+                    .tint(.primary.opacity(0.7))
+
+                Image(systemName: "drop.fill")
+                    .font(.system(size: 16))
+                    .foregroundStyle(.secondary)
+
+                Text("\(Int(settingsStore.backgroundBlurRadius))")
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 30, alignment: .trailing)
+            }
+        }
+    }
+
     private func sectionLabel(_ title: String) -> some View {
         Text(title)
             .font(.system(size: 14, weight: .semibold))
@@ -256,7 +284,7 @@ struct SettingsView: View {
 
         panel.begin { response in
             if response == .OK, let url = panel.url {
-                settingsStore.backgroundImagePath = url.path
+                settingsStore.setBackgroundImage(from: url)
             }
             window.level = originalLevel
             window.makeKeyAndOrderFront(nil)

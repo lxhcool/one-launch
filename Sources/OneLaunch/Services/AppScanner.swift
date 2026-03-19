@@ -55,7 +55,13 @@ struct AppScanner {
             return AppItem(url: url, name: entry.name, bundleIdentifier: entry.bundleIdentifier)
         }
 
-        return apps.isEmpty ? nil : apps
+        guard !apps.isEmpty else { return nil }
+
+        var seen = Set<String>()
+        let deduped = apps.filter { app in
+            seen.insert(app.id).inserted
+        }
+        return deduped.isEmpty ? nil : deduped
     }
 
     private func saveCache(_ apps: [AppItem]) {

@@ -22,6 +22,10 @@ struct FolderCardView: View {
         iconSize + 42
     }
 
+    private var cardWidth: Double {
+        iconSize + 10
+    }
+
     private var tileGap: Double {
         max(1.5, iconSize * 0.028)
     }
@@ -57,21 +61,22 @@ struct FolderCardView: View {
                     }
                 }
             }
-            .frame(width: iconSize, height: iconSize)
+            .frame(width: cardWidth)
 
             Text(folder.name)
                 .font(.system(size: max(11, iconSize * 0.19), weight: .medium))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .frame(maxWidth: .infinity)
+                .frame(width: cardWidth)
         }
-        .frame(maxWidth: .infinity, minHeight: cardHeight, maxHeight: cardHeight, alignment: .top)
-        .padding(.horizontal, 8)
+        .frame(width: cardWidth)
+        .frame(minHeight: cardHeight, maxHeight: cardHeight, alignment: .top)
         .padding(.vertical, 8)
-        .contentShape(Rectangle())
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .onTapGesture(perform: onOpenFolder)
         .help(apps.map(\.name).joined(separator: "\n"))
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     @ViewBuilder

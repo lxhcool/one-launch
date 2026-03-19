@@ -13,6 +13,10 @@ struct AppCardView: View {
         iconSize + 42
     }
 
+    private var cardWidth: Double {
+        iconSize + 10
+    }
+
     var body: some View {
         VStack(spacing: 8) {
             Image(nsImage: AppIconProvider.shared.icon(for: app))
@@ -25,18 +29,19 @@ struct AppCardView: View {
                 .font(.system(size: max(10, iconSize * 0.16), weight: .medium))
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.center)
-                .lineLimit(nil)
+                .lineLimit(2)
                 .allowsTightening(true)
                 .minimumScaleFactor(0.72)
-                .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28, alignment: .top)
+                .frame(width: cardWidth)
+                .frame(minHeight: 28, maxHeight: 28, alignment: .top)
                 .clipped()
-                .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity, minHeight: cardHeight, maxHeight: cardHeight, alignment: .top)
-        .padding(.horizontal, 8)
+        .frame(width: cardWidth)
+        .frame(minHeight: cardHeight, maxHeight: cardHeight, alignment: .top)
         .padding(.vertical, 8)
-        .contentShape(Rectangle())
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .onTapGesture(perform: action)
         .help(app.bundleIdentifier ?? app.url.path)
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 }

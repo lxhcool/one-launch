@@ -37,6 +37,7 @@ final class LauncherViewModel: ObservableObject {
         didSet {
             if query != oldValue {
                 activeFolderID = nil
+                currentPage = 0
             }
             updateFilteredAppsCache()
         }
@@ -52,8 +53,10 @@ final class LauncherViewModel: ObservableObject {
     @Published var showSettings = false
     @Published private(set) var filteredAppsCache: [AppItem] = []
     @Published var activeFolderID: String?
+    @Published var currentPage = 0
 
     let settingsStore: SettingsStore
+    let itemsPerPage = 36
     private let recentAppsStore = RecentAppsStore()
     private var cancellables = Set<AnyCancellable>()
     private var hasPreparedData = false
@@ -107,9 +110,10 @@ final class LauncherViewModel: ObservableObject {
         }
 
         let folderMap = Dictionary(
-            uniqueKeysWithValues: folderDisplays.flatMap { display in
+            folderDisplays.flatMap { display in
                 display.apps.map { ($0.id, display) }
-            }
+            },
+            uniquingKeysWith: { existing, _ in existing }
         )
 
         var seenFolders = Set<String>()
@@ -126,6 +130,18 @@ final class LauncherViewModel: ObservableObject {
         }
 
         return result
+    }
+
+    var totalPages: Int {
+        max(1, (gridItems.count + itemsPerPage - 1) / itemsPerPage)
+    }
+
+    func gridItemsForPage(_ page: Int) -> [LauncherGridItem] {
+        let allItems = gridItems
+        let start = page * itemsPerPage
+        let end = min(start + itemsPerPage, allItems.count)
+        guard start < allItems.count else { return [] }
+        return Array(allItems[start..<end])
     }
 
     var presentedFolder: FolderDisplay? {
@@ -207,7 +223,10 @@ final class LauncherViewModel: ObservableObject {
                 return lhs.app.name.localizedStandardCompare(rhs.app.name) == .orderedAscending
             }.map(\.app)
         case .manual:
-            let orderMap = Dictionary(uniqueKeysWithValues: manualOrder.enumerated().map { ($1, $0) })
+            let orderMap = Dictionary(
+                manualOrder.enumerated().map { ($1, $0) },
+                uniquingKeysWith: { existing, _ in existing }
+            )
             return ranked.sorted { lhs, rhs in
                 let li = orderMap[lhs.app.id] ?? Int.max
                 let ri = orderMap[rhs.app.id] ?? Int.max
@@ -258,6 +277,18 @@ final class LauncherViewModel: ObservableObject {
     func clearSearch() {
         query = ""
         shouldFocusSearchField = true
+    }
+
+    func nextPage() {
+        if currentPage < totalPages - 1 {
+            currentPage += 1
+        }
+    }
+
+    func previousPage() {
+        if currentPage > 0 {
+            currentPage -= 1
+        }
     }
 
     func launchFirstResult() {
@@ -458,7 +489,10 @@ final class LauncherViewModel: ObservableObject {
     private func applyManualOrderImmediately(_ order: [String]) {
         guard !isSearching else { return }
 
-        let appByID = Dictionary(uniqueKeysWithValues: apps.map { ($0.id, $0) })
+        let appByID = Dictionary(
+            apps.map { ($0.id, $0) },
+            uniquingKeysWith: { existing, _ in existing }
+        )
         let orderedApps = order.compactMap { appByID[$0] }
         let remainingApps = apps.filter { !order.contains($0.id) }
 
@@ -467,8 +501,11 @@ final class LauncherViewModel: ObservableObject {
         }
     }
 
-    private func resolveFolders(for visibleApps: [AppItem]) -> [FolderDisplay] {
-        let appByID = Dictionary(uniqueKeysWithValues: visibleApps.map { ($0.id, $0) })
+    func resolveFolders(for visibleApps: [AppItem]) -> [FolderDisplay] {
+        let appByID = Dictionary(
+            visibleApps.map { ($0.id, $0) },
+            uniquingKeysWith: { existing, _ in existing }
+        )
         return normalizedFolders(settingsStore.appFolders).compactMap { folder in
             // 文件夹内顺序由 folder.appIDs 决定（支持手动拖拽排序）
             let members = folder.appIDs.compactMap { appByID[$0] }

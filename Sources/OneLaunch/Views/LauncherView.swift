@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct LauncherView: View {
@@ -17,6 +18,9 @@ struct LauncherView: View {
     @State private var folderPanelFrame: CGRect = .zero
     @State private var folderPanelAppFrames: [String: FolderPanelAppFrameEntry] = [:]
     @State private var folderPanelReorderPosition: FolderPanelReorderPosition?
+    @State private var pageOffset: CGFloat = 0
+    @State private var scrollEventMonitor: Any?
+    @State private var accumulatedHorizontalScroll: CGFloat = 0
 
     private var effectiveIconSize: Double {
         settingsStore.iconSize + 12
@@ -39,6 +43,10 @@ struct LauncherView: View {
 
     private var gridItemIDs: [String] {
         viewModel.gridItems.map(\.id)
+    }
+
+    private var adaptiveColorScheme: ColorScheme {
+        settingsStore.backgroundIsDark ? .dark : .light
     }
 
     var body: some View {
@@ -72,13 +80,16 @@ struct LauncherView: View {
                 .padding(.top, max(geometry.safeAreaInsets.top + 26, 44))
                 .padding(.bottom, 14)
                 .opacity(viewModel.isPresented ? 1 : 0)
-                .scaleEffect(viewModel.isPresented ? 1 : 0.92)
+                .scaleEffect(viewModel.isPresented ? 1 : 0.95)
+                .animation(.spring(response: 0.35, dampingFraction: 0.86), value: viewModel.isPresented)
 
                 topLeadingMeta(geometry: geometry)
                     .opacity(viewModel.isPresented ? 1 : 0)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.86).delay(0.03), value: viewModel.isPresented)
 
                 topTrailingActions(geometry: geometry)
                     .opacity(viewModel.isPresented ? 1 : 0)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.86).delay(0.03), value: viewModel.isPresented)
 
                 Color.black.opacity(viewModel.showSettings ? 0.3 : 0)
                     .ignoresSafeArea()
@@ -101,15 +112,6 @@ struct LauncherView: View {
                 }
             }
             .coordinateSpace(name: "launcherGridSpace")
-            .onPreferenceChange(GridDropFramePreferenceKey.self) { entries in
-                gridFrames = Dictionary(uniqueKeysWithValues: entries.map { ($0.itemID, $0) })
-            }
-            .onPreferenceChange(FolderPanelAppFramePreferenceKey.self) { entries in
-                folderPanelAppFrames = Dictionary(uniqueKeysWithValues: entries.map { ($0.appID, $0) })
-            }
-            .onPreferenceChange(FolderPanelFramePreferenceKey.self) { frame in
-                folderPanelFrame = frame
-            }
             .onChange(of: viewModel.activeFolderID) { _, _ in
                 if let folder = viewModel.presentedFolder {
                     folderNameDraft = folder.folder.name
@@ -122,6 +124,12 @@ struct LauncherView: View {
         }
         .ignoresSafeArea()
         .background(Color.clear)
+        .onAppear {
+            installTrackpadMonitorIfNeeded()
+        }
+        .onDisappear {
+            removeTrackpadMonitor()
+        }
         .onExitCommand {
             if viewModel.showSettings {
                 dismissSettings()
@@ -131,6 +139,7 @@ struct LauncherView: View {
                 onClose()
             }
         }
+        .environment(\.colorScheme, adaptiveColorScheme)
     }
 
     private func dismissSettings() {
@@ -141,16 +150,22 @@ struct LauncherView: View {
 
     private func backgroundLayers(geometry: GeometryProxy) -> some View {
         ZStack {
-            if let nsImage = settingsStore.backgroundImage {
+            if let nsImage = settingsStore.backgroundBlurImage ?? settingsStore.backgroundImage {
                 Image(nsImage: nsImage)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(width: geometry.size.width, height: geometry.size.height)
                     .clipped()
 
-                VisualEffectView(material: .fullScreenUI, blendingMode: .withinWindow)
-
-                Color.black.opacity(0.15)
+                // 更接近 macOS Launchpad 的透感：高斯底图 + 轻微层次渐变
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.06),
+                        Color.black.opacity(0.10)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
             } else {
                 VisualEffectView(material: .fullScreenUI, blendingMode: .behindWindow)
 
@@ -162,9 +177,9 @@ struct LauncherView: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
-            }
 
-            backgroundAccent(geometry: geometry)
+                backgroundAccent(geometry: geometry)
+            }
         }
         .ignoresSafeArea()
     }
@@ -212,41 +227,105 @@ struct LauncherView: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            ScrollView(.vertical, showsIndicators: false) {
+            GeometryReader { geo in
                 VStack(spacing: 0) {
-                    ScrollViewConfigurator()
-                        .frame(width: 0, height: 0)
+                    HStack(spacing: 0) {
+                        ForEach(0..<viewModel.totalPages, id: \.self) { page in
+                            if abs(page - viewModel.currentPage) <= 1 {
+                                VStack(spacing: 0) {
+                                    LazyVGrid(columns: columns, spacing: 18) {
+                                        ForEach(viewModel.gridItemsForPage(page)) { item in
+                                            switch item {
+                                            case let .app(app):
+                                                appGridItem(for: app)
+                                            case let .folder(folder):
+                                                folderGridItem(for: folder)
+                                            }
+                                        }
+                                    }
+                                    .padding(.top, 24)
+                                    .padding(.horizontal, 24)
+                                    .padding(.bottom, 10)
 
-                    appGrid
-
-                    // 底部空白区域也能点击关闭（ScrollView 否则会吞掉点击）
-                    Color.clear
-                        .frame(height: 320)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            if viewModel.showSettings {
-                                dismissSettings()
-                            } else if viewModel.presentedFolder != nil {
-                                viewModel.closeFolder()
+                                    Color.clear
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                        .contentShape(Rectangle())
+                                        .onTapGesture {
+                                            if viewModel.showSettings {
+                                                dismissSettings()
+                                            } else if viewModel.presentedFolder != nil {
+                                                viewModel.closeFolder()
+                                            } else {
+                                                onClose()
+                                            }
+                                        }
+                                }
+                                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+                                .allowsHitTesting(page == viewModel.currentPage)
                             } else {
-                                onClose()
+                                Color.clear
+                                    .frame(width: geo.size.width, height: geo.size.height)
                             }
                         }
+                    }
+                    .offset(x: -CGFloat(viewModel.currentPage) * geo.size.width + pageOffset)
+                    .frame(width: geo.size.width, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .clipped()
+                    .animation(.interactiveSpring(response: 0.22, dampingFraction: 0.9), value: viewModel.currentPage)
+                    .overlay(alignment: .bottom) {
+                        if !viewModel.isSearching && viewModel.totalPages > 1 {
+                            pageIndicator
+                                .padding(.bottom, 18)
+                        }
+                    }
+                    .gesture(
+                        DragGesture(minimumDistance: 6, coordinateSpace: .local)
+                            .onChanged { value in
+                                guard canHandlePageSwipe else { return }
+                                guard viewModel.totalPages > 1 else { return }
+
+                                let horizontal = abs(value.translation.width)
+                                let vertical = abs(value.translation.height)
+                                guard horizontal > max(6, vertical * 0.8) else { return }
+
+                                pageOffset = adjustedPageOffset(for: value.translation.width)
+                            }
+                            .onEnded { value in
+                                guard canHandlePageSwipe else { return }
+                                guard viewModel.totalPages > 1 else { return }
+
+                                let current = adjustedPageOffset(for: value.translation.width)
+                                let predicted = adjustedPageOffset(for: value.predictedEndTranslation.width)
+                                let effective: CGFloat
+                                if abs(predicted) > abs(current) {
+                                    effective = predicted
+                                } else {
+                                    effective = current
+                                }
+                                let threshold = pageSwipeThreshold(for: geo.size.width)
+
+                                var targetPage = viewModel.currentPage
+                                if effective < -threshold {
+                                    targetPage = min(viewModel.totalPages - 1, viewModel.currentPage + 1)
+                                } else if effective > threshold {
+                                    targetPage = max(0, viewModel.currentPage - 1)
+                                }
+
+                                withAnimation(.interactiveSpring(response: 0.22, dampingFraction: 0.9)) {
+                                    viewModel.currentPage = targetPage
+                                    pageOffset = 0
+                                }
+                            }
+                    )
+                    .onChange(of: viewModel.totalPages) { _, totalPages in
+                        let maxPage = max(0, totalPages - 1)
+                        if viewModel.currentPage > maxPage {
+                            viewModel.currentPage = maxPage
+                        }
+                    }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .mask(
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear, location: 0),
-                        .init(color: .black, location: 0.03),
-                        .init(color: .black, location: 0.97),
-                        .init(color: .clear, location: 1)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
         }
     }
 
@@ -267,46 +346,98 @@ struct LauncherView: View {
         .animation(.interactiveSpring(response: 0.26, dampingFraction: 0.86, blendDuration: 0.12), value: gridItemIDs)
     }
 
-    private func appGridItem(for app: AppItem) -> some View {
-        let target = FolderDropTarget.app(app.id)
-        let isDragging = draggingAppID == app.id
-        let isHoverTarget = hoverGroupTarget == target && draggingAppID != app.id
-        let itemID = app.id
+    private var canHandlePageSwipe: Bool {
+        !viewModel.showSettings
+            && viewModel.presentedFolder == nil
+    }
 
+    private func adjustedPageOffset(for translation: CGFloat) -> CGFloat {
+        let atFirstPage = viewModel.currentPage == 0 && translation > 0
+        let atLastPage = viewModel.currentPage >= viewModel.totalPages - 1 && translation < 0
+
+        if atFirstPage || atLastPage {
+            return translation * 0.28
+        }
+        return translation
+    }
+
+    private func pageSwipeThreshold(for width: CGFloat) -> CGFloat {
+        max(14, min(40, width * 0.022))
+    }
+
+    private func installTrackpadMonitorIfNeeded() {
+        guard scrollEventMonitor == nil else { return }
+
+        scrollEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+            handleTrackpadScroll(event)
+        }
+    }
+
+    private func removeTrackpadMonitor() {
+        guard let scrollEventMonitor else { return }
+        NSEvent.removeMonitor(scrollEventMonitor)
+        self.scrollEventMonitor = nil
+    }
+
+    private func handleTrackpadScroll(_ event: NSEvent) -> NSEvent? {
+        guard viewModel.isPresented,
+              canHandlePageSwipe,
+              viewModel.totalPages > 1 else {
+            accumulatedHorizontalScroll = 0
+            return event
+        }
+
+        if event.phase == .began {
+            accumulatedHorizontalScroll = 0
+        }
+
+        let horizontal = event.scrollingDeltaX
+        let vertical = event.scrollingDeltaY
+        guard abs(horizontal) > abs(vertical) * 1.2, abs(horizontal) > 0.5 else {
+            if event.phase == .ended || event.phase == .cancelled || event.momentumPhase == .ended {
+                accumulatedHorizontalScroll = 0
+            }
+            return event
+        }
+
+        accumulatedHorizontalScroll += horizontal
+        let threshold: CGFloat = 42
+
+        if accumulatedHorizontalScroll >= threshold {
+            if viewModel.currentPage < viewModel.totalPages - 1 {
+                withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.86)) {
+                    viewModel.nextPage()
+                }
+            }
+            accumulatedHorizontalScroll = 0
+            return nil
+        }
+
+        if accumulatedHorizontalScroll <= -threshold {
+            if viewModel.currentPage > 0 {
+                withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.86)) {
+                    viewModel.previousPage()
+                }
+            }
+            accumulatedHorizontalScroll = 0
+            return nil
+        }
+
+        if event.phase == .ended || event.phase == .cancelled || event.momentumPhase == .ended {
+            accumulatedHorizontalScroll = 0
+        }
+
+        return nil
+    }
+
+    private func appGridItem(for app: AppItem) -> some View {
         return AppCardView(app: app, iconSize: effectiveIconSize) {
             onClose()
             viewModel.launch(app)
         }
-        .overlay {
-            itemChromeOverlay(isHoverTarget: isHoverTarget, itemID: itemID)
-        }
-        .offset(isDragging ? draggingAppTranslation : .zero)
-        .scaleEffect(isDragging ? 1.04 : 1)
-        .opacity(isDragging ? 0.92 : 1)
-        .zIndex(isDragging ? 10 : 0)
-        .highPriorityGesture(dragGesture(for: app.id))
-        .background(
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: GridDropFramePreferenceKey.self,
-                    value: [
-                        GridDropFrameEntry(
-                            itemID: itemID,
-                            target: target,
-                            frame: proxy.frame(in: .named("launcherGridSpace"))
-                        )
-                    ]
-                )
-            }
-        )
     }
 
     private func folderGridItem(for folder: FolderDisplay) -> some View {
-        let target = FolderDropTarget.folder(folder.id)
-        let isDragging = draggingFolderID == folder.id
-        let isHoverTarget = hoverGroupTarget == target && draggingFolderID != folder.id
-        let itemID = "folder:\(folder.id)"
-
         return FolderCardView(
             folder: folder.folder,
             apps: folder.apps,
@@ -317,28 +448,6 @@ struct LauncherView: View {
                 viewModel.launch(app)
             }
         )
-        .overlay {
-            itemChromeOverlay(isHoverTarget: isHoverTarget, itemID: itemID)
-        }
-        .background(
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: GridDropFramePreferenceKey.self,
-                    value: [
-                        GridDropFrameEntry(
-                            itemID: itemID,
-                            target: target,
-                            frame: proxy.frame(in: .named("launcherGridSpace"))
-                        )
-                    ]
-                )
-            }
-        )
-        .offset(isDragging ? draggingFolderTranslation : .zero)
-        .scaleEffect(isDragging ? 1.04 : 1)
-        .opacity(isDragging ? 0.92 : 1)
-        .zIndex(isDragging ? 10 : 0)
-        .highPriorityGesture(folderDragGesture(for: folder.id))
         .contextMenu {
             Button("解散文件夹") {
                 viewModel.dissolveFolder(folder.id)
@@ -351,6 +460,12 @@ struct LauncherView: View {
             .onChanged { value in
                 guard !viewModel.isSearching else { return }
                 guard draggingFolderID == nil else { return }
+
+                let horizontal = abs(value.translation.width)
+                let vertical = abs(value.translation.height)
+                if draggingAppID == nil, horizontal > vertical * 1.15 {
+                    return
+                }
 
                 if draggingAppID == nil {
                     draggingAppID = appID
@@ -392,6 +507,12 @@ struct LauncherView: View {
             .onChanged { value in
                 guard !viewModel.isSearching else { return }
                 guard draggingAppID == nil else { return }
+
+                let horizontal = abs(value.translation.width)
+                let vertical = abs(value.translation.height)
+                if draggingFolderID == nil, horizontal > vertical * 1.15 {
+                    return
+                }
 
                 if draggingFolderID == nil {
                     draggingFolderID = folderID
@@ -588,13 +709,9 @@ struct LauncherView: View {
             folderNameDraft = folder.folder.name
         }
         .onTapGesture {}
-        .modifier(FolderPanelFramePreferenceSetter())
     }
 
     private func folderAppCard(app: AppItem, folder: FolderDisplay) -> some View {
-        let isDragging = draggingAppIDFromFolder == app.id
-        let itemID = app.id
-
         return AppCardView(app: app, iconSize: folderPanelIconSize) {
             commitFolderName(for: folder.id)
             viewModel.closeFolder()
@@ -610,36 +727,7 @@ struct LauncherView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(Color.white.opacity(0.10), lineWidth: 1)
         )
-        .offset(isDragging ? draggingAppFromFolderTranslation : .zero)
-        .scaleEffect(isDragging ? 1.05 : 1)
-        .opacity(isDragging ? 0.9 : 1)
-        .zIndex(isDragging ? 10 : 0)
-        .highPriorityGesture(folderAppDragGesture(appID: app.id, folderID: folder.id))
-        .help("拖到面板外可移出文件夹")
-        .overlay {
-            if let folderPanelReorderPosition, folderPanelReorderPosition.targetAppID == itemID {
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(Color.white.opacity(0.95))
-                    .frame(height: 4)
-                    .padding(.horizontal, 12)
-                    .frame(maxHeight: .infinity, alignment: folderPanelReorderPosition.placeAfter ? .bottom : .top)
-                    .shadow(color: .white.opacity(0.35), radius: 8)
-                    .padding(folderPanelReorderPosition.placeAfter ? .bottom : .top, 2)
-            }
-        }
-        .background(
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: FolderPanelAppFramePreferenceKey.self,
-                    value: [
-                        FolderPanelAppFrameEntry(
-                            appID: itemID,
-                            frame: proxy.frame(in: .named("launcherGridSpace"))
-                        )
-                    ]
-                )
-            }
-        )
+        .help("点击打开应用")
     }
 
     private func folderAppDragGesture(appID: String, folderID: String) -> some Gesture {
@@ -937,6 +1025,62 @@ struct LauncherView: View {
                 ),
                 lineWidth: 1
             )
+    }
+
+    private var paginationControls: some View {
+        HStack(spacing: 16) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    viewModel.previousPage()
+                }
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 40, height: 40)
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.currentPage == 0)
+            .opacity(viewModel.currentPage == 0 ? 0.4 : 1)
+
+            Text("\(viewModel.currentPage + 1) / \(viewModel.totalPages)")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 60)
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    viewModel.nextPage()
+                }
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 40, height: 40)
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.currentPage >= viewModel.totalPages - 1)
+            .opacity(viewModel.currentPage >= viewModel.totalPages - 1 ? 0.4 : 1)
+        }
+        .padding(.vertical, 16)
+        .onTapGesture {}
+    }
+
+    private var pageIndicator: some View {
+        HStack(spacing: 8) {
+            ForEach(0..<viewModel.totalPages, id: \.self) { page in
+                Circle()
+                    .fill(page == viewModel.currentPage ? Color.white.opacity(0.9) : Color.white.opacity(0.3))
+                    .frame(width: page == viewModel.currentPage ? 7 : 6, height: page == viewModel.currentPage ? 7 : 6)
+                    .animation(.easeInOut(duration: 0.2), value: viewModel.currentPage)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.black.opacity(0.2), in: Capsule())
+        .allowsHitTesting(false)
     }
 }
 
