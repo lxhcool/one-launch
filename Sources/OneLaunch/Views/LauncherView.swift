@@ -50,6 +50,10 @@ struct LauncherView: View {
         settingsStore.backgroundIsDark ? .dark : .light
     }
 
+    private var pageTransitionAnimation: Animation {
+        .timingCurve(0.22, 0.61, 0.36, 1, duration: 0.24)
+    }
+
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -293,7 +297,6 @@ struct LauncherView: View {
                     .frame(width: geo.size.width, alignment: .leading)
                     .contentShape(Rectangle())
                     .clipped()
-                    .animation(.interactiveSpring(response: 0.22, dampingFraction: 0.9), value: viewModel.currentPage)
                     .overlay(alignment: .bottom) {
                         if !viewModel.isSearching && viewModel.totalPages > 1 {
                             pageIndicator
@@ -333,7 +336,7 @@ struct LauncherView: View {
                                     targetPage = max(0, viewModel.currentPage - 1)
                                 }
 
-                                withAnimation(.interactiveSpring(response: 0.22, dampingFraction: 0.9)) {
+                                withAnimation(pageTransitionAnimation) {
                                     viewModel.currentPage = targetPage
                                     pageOffset = 0
                                 }
@@ -426,7 +429,7 @@ struct LauncherView: View {
 
         if accumulatedHorizontalScroll >= threshold {
             if viewModel.currentPage < viewModel.totalPages - 1 {
-                withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.86)) {
+                withAnimation(pageTransitionAnimation) {
                     viewModel.nextPage()
                 }
             }
@@ -436,7 +439,7 @@ struct LauncherView: View {
 
         if accumulatedHorizontalScroll <= -threshold {
             if viewModel.currentPage > 0 {
-                withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.86)) {
+                withAnimation(pageTransitionAnimation) {
                     viewModel.previousPage()
                 }
             }
@@ -1081,7 +1084,7 @@ struct LauncherView: View {
     private var paginationControls: some View {
         HStack(spacing: 16) {
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(pageTransitionAnimation) {
                     viewModel.previousPage()
                 }
             } label: {
@@ -1101,7 +1104,7 @@ struct LauncherView: View {
                 .frame(minWidth: 60)
 
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(pageTransitionAnimation) {
                     viewModel.nextPage()
                 }
             } label: {
@@ -1128,7 +1131,7 @@ struct LauncherView: View {
                     .fill(page == viewModel.currentPage ? Color.white : Color.white.opacity(hoveredPage == page ? 0.6 : 0.35))
                     .frame(width: page == viewModel.currentPage ? 18 : (hoveredPage == page ? 8 : 6), height: 6)
                     .onTapGesture {
-                        withAnimation(.easeOut(duration: 0.2)) {
+                        withAnimation(pageTransitionAnimation) {
                             viewModel.currentPage = page
                         }
                     }
