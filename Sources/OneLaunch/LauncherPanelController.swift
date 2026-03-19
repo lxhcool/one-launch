@@ -66,6 +66,10 @@ final class LauncherPanelController: NSObject {
 
         isAnimating = true
 
+        // 先准备数据，避免动画时加载数据
+        viewModel.isPresented = true
+        viewModel.deferredPrepare()
+
         // 设置初始状态：透明 + 列表区域轻微缩小
         panel.alphaValue = 0
         viewModel.scale = 0.95
@@ -73,21 +77,21 @@ final class LauncherPanelController: NSObject {
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
-        // 窗口淡入动画（0.25s）
+        // 统一的动画：窗口淡入 + 列表缩放
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.25
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().alphaValue = 1
+            
+            // 同时执行 SwiftUI 动画
+            withAnimation(.easeOut(duration: 0.25)) {
+                viewModel.scale = 1.0
+            }
+        }, completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                self?.isAnimating = false
+            }
         })
-        
-        // 列表区域缩放动画
-        withAnimation(.easeOut(duration: 0.25)) {
-            viewModel.scale = 1.0
-        }
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-            self?.isAnimating = false
-        }
 
         viewModel.isPresented = true
         viewModel.deferredPrepare()
@@ -105,13 +109,22 @@ final class LauncherPanelController: NSObject {
             }
         }
 
+        // 预热视图：先渲染一次，然后立即隐藏
         panel.alphaValue = 0
         panel.ignoresMouseEvents = true
         panel.orderFront(nil)
+        
+        // 触发布局和渲染
+        panel.contentView?.layoutSubtreeIfNeeded()
         panel.displayIfNeeded()
+        
+        // 立即隐藏
         panel.orderOut(nil)
         panel.ignoresMouseEvents = false
         panel.alphaValue = 1
+        
+        // 预加载数据
+        viewModel.deferredPrepare()
     }
 
     func hide() {
