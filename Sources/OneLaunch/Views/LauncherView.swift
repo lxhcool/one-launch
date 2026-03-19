@@ -190,10 +190,6 @@ struct LauncherView: View {
 
             searchBar
 
-            if !viewModel.query.isEmpty {
-                headerButton(systemImage: "xmark.circle", action: viewModel.clearSearch, helpText: "清空搜索")
-            }
-
             Spacer(minLength: 0)
         }
         .padding(.top, 40)
@@ -202,18 +198,29 @@ struct LauncherView: View {
     }
 
     private func topTrailingActions(geometry: GeometryProxy) -> some View {
-        HStack(spacing: 10) {
-            headerButton(systemImage: "gearshape", action: {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    viewModel.showSettings.toggle()
+        HStack(spacing: 8) {
+            ForEach([
+                ("gearshape", { viewModel.showSettings.toggle() }, "设置"),
+                ("arrow.clockwise", { viewModel.refreshApplications() }, "重新扫描"),
+                ("xmark", { onClose() }, "关闭")
+            ], id: \.0) { icon, action, help in
+                Button(action: action) {
+                    Image(systemName: icon)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .frame(width: 34, height: 34)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color.white.opacity(0.06))
+                        )
                 }
-            }, helpText: "设置")
-            headerButton(systemImage: "arrow.clockwise", action: viewModel.refreshApplications, helpText: "重新扫描应用")
-            headerButton(systemImage: "xmark", action: onClose, helpText: "关闭")
+                .buttonStyle(.plain)
+                .help(help)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-        .padding(.trailing, 24)
-        .padding(.top, max(geometry.safeAreaInsets.top + 24, 24))
+        .padding(.trailing, 20)
+        .padding(.top, max(geometry.safeAreaInsets.top + 20, 20))
         .onTapGesture {}
     }
 
@@ -603,108 +610,75 @@ struct LauncherView: View {
     }
 
     private func folderPanel(for folder: FolderDisplay) -> some View {
-        VStack(alignment: .leading, spacing: 22) {
-            HStack(alignment: .top, spacing: 18) {
+        VStack(alignment: .leading, spacing: 16) {
+            // Header
+            HStack(alignment: .top, spacing: 14) {
                 folderHeroPreview(for: folder)
 
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 8) {
                     TextField("文件夹名称", text: Binding(
                         get: { folderNameDraft },
                         set: { folderNameDraft = $0 }
                     ))
                     .textFieldStyle(.plain)
-                    .font(.system(size: 28, weight: .bold))
+                    .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(.primary)
                     .onSubmit {
                         commitFolderName(for: folder.id)
                     }
 
-                    HStack(spacing: 10) {
-                        folderInfoBadge(systemImage: "square.grid.2x2", title: "\(folder.apps.count) 个应用")
-                        folderInfoBadge(systemImage: "slider.horizontal.3", title: "支持自定义名称")
+                    HStack(spacing: 8) {
+                        folderInfoBadge(systemImage: "apps.ipad", title: "\(folder.apps.count)")
+                        folderInfoBadge(systemImage: "hand.tap", title: "点击打开")
                     }
-
-                    Text("打开常用应用、统一整理分组，拖拽排序后会保留当前位置。")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Spacer(minLength: 0)
 
-                HStack(spacing: 10) {
+                HStack(spacing: 6) {
                     Button {
                         viewModel.dissolveFolder(folder.id)
                     } label: {
                         Label("解散", systemImage: "folder.badge.minus")
+                            .font(.system(size: 11, weight: .medium))
                     }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.08), in: Capsule())
+                    .buttonStyle(FolderPanelButtonStyle())
 
                     Button {
                         commitFolderName(for: folder.id)
                         viewModel.closeFolder()
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.primary)
-                            .frame(width: 34, height: 34)
-                            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .font(.system(size: 10, weight: .semibold))
+                            .frame(width: 28, height: 28)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(FolderPanelButtonStyle())
                 }
             }
 
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text("文件夹内应用")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    Text("点击即可打开")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
-                }
-
-                ScrollView(.vertical, showsIndicators: false) {
-                    let size = folderPanelIconSize
-                    let minimum = size + 44
-                    let maximum = size + 72
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: minimum, maximum: maximum), spacing: 16)], spacing: 16) {
-                        ForEach(folder.apps) { app in
-                            folderAppCard(app: app, folder: folder)
-                        }
+            // Content
+            ScrollView(.vertical, showsIndicators: false) {
+                let size = folderPanelIconSize
+                let minimum = size + 44
+                let maximum = size + 72
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: minimum, maximum: maximum), spacing: 12)], spacing: 12) {
+                    ForEach(folder.apps) { app in
+                        folderAppCard(app: app, folder: folder)
                     }
-                    .padding(.top, 4)
-                    .padding(.bottom, 6)
                 }
+                .padding(.vertical, 2)
             }
         }
-        .padding(26)
-        .frame(width: 760, height: 500)
+        .padding(18)
+        .frame(width: 600, height: 400)
         .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.12),
-                            Color.white.opacity(0.06)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
                 )
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.white.opacity(0.16), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.35), radius: 30, y: 10)
         .onAppear {
             folderNameDraft = folder.folder.name
         }
@@ -718,15 +692,6 @@ struct LauncherView: View {
             onClose()
             viewModel.launch(app)
         }
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.05))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.10), lineWidth: 1)
-        )
         .help("点击打开应用")
     }
 
@@ -799,17 +764,13 @@ struct LauncherView: View {
     }
 
     private func folderHeroPreview(for folder: FolderDisplay) -> some View {
-        let heroSize: Double = 124
-        let gap: Double = 8
-        let tileSize: Double = 42
+        let heroSize: Double = 100
+        let gap: Double = 6
+        let tileSize: Double = 36
 
         return ZStack {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(Color.white.opacity(0.10))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(Color.white.opacity(0.22), lineWidth: 1)
-                )
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.white.opacity(0.08))
 
             VStack(spacing: gap) {
                 ForEach(0..<2, id: \.self) { row in
@@ -821,7 +782,7 @@ struct LauncherView: View {
                                     .resizable()
                                     .scaledToFit()
                                     .frame(width: tileSize, height: tileSize)
-                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                             } else {
                                 Color.clear
                                     .frame(width: tileSize, height: tileSize)
@@ -836,11 +797,31 @@ struct LauncherView: View {
 
     private func folderInfoBadge(systemImage: String, title: String) -> some View {
         Label(title, systemImage: systemImage)
-            .font(.system(size: 12, weight: .semibold))
+            .font(.system(size: 11, weight: .medium))
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Color.white.opacity(0.08), in: Capsule())
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Capsule()
+                    .fill(Color.white.opacity(0.08))
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
+                    )
+            )
+    }
+
+    struct FolderPanelButtonStyle: ButtonStyle {
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.white.opacity(0.06))
+                )
+        }
     }
 
     private func spotlightCard(for app: AppItem) -> some View {
@@ -848,74 +829,97 @@ struct LauncherView: View {
             onClose()
             viewModel.launch(app)
         } label: {
-            HStack(spacing: 18) {
+            HStack(spacing: 12) {
                 Image(nsImage: AppIconProvider.shared.icon(for: app))
                     .resizable()
-                    .frame(width: 76, height: 76)
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .frame(width: 44, height: 44)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("最佳匹配")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
-
+                VStack(alignment: .leading, spacing: 3) {
                     Text(app.name)
-                        .font(.system(size: 28, weight: .bold))
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.primary)
 
                     Text(app.bundleIdentifier ?? app.url.path)
-                        .font(.system(size: 12))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .truncationMode(.middle)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                Spacer()
-
-                Text("回车启动")
-                    .font(.system(size: 12, weight: .semibold))
+                Text("↵ 打开")
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.10), in: Capsule())
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(Color.white.opacity(0.08))
+                    )
             }
-            .padding(24)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(width: 520)
             .background(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(panelFill)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    )
             )
         }
         .buttonStyle(.plain)
-        .onTapGesture {}
-    }
-
-    private var hintsRow: some View {
-        HStack(spacing: 14) {
-            footerHint(systemImage: "cursorarrow.motionlines", title: "拖拽排序 / 叠放分组")
-            footerHint(systemImage: "command", title: "⌥ Space 快速呼出")
-            footerHint(systemImage: "sparkles", title: "搜索 + 网格双模式")
-        }
-        .onTapGesture {}
     }
 
     private func topLeadingMeta(geometry: GeometryProxy) -> some View {
-        HStack(spacing: 10) {
-            actionBadge(title: viewModel.subtitleText)
-            actionBadge(title: "⌥ Space")
-            hintsRow
+        HStack(spacing: 8) {
+            // Status badge
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(viewModel.isRefreshing ? Color.orange : Color.green)
+                    .frame(width: 5, height: 5)
+
+                Text(viewModel.subtitleText)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(Color.black.opacity(0.2))
+            )
+
+            // Shortcut hint
+            HStack(spacing: 3) {
+                Text("⌥")
+                    .font(.system(size: 10, weight: .bold))
+                Text("Space")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(Color.black.opacity(0.2))
+            )
+
+            Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.leading, 24)
-        .padding(.top, max(geometry.safeAreaInsets.top + 24, 24))
+        .padding(.leading, 20)
+        .padding(.top, max(geometry.safeAreaInsets.top + 20, 20))
     }
 
+    @State private var isSearchFocused = false
+
     private var searchBar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 18, weight: .semibold))
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(.secondary)
 
             SearchField(
@@ -927,59 +931,42 @@ struct LauncherView: View {
                     viewModel.launchFirstResult()
                 }
             )
+
+            if !viewModel.query.isEmpty {
+                Button(action: viewModel.clearSearch) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(.secondary.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+                .transition(.opacity.combined(with: .scale))
+            }
         }
         .padding(.horizontal, 20)
-        .frame(width: 600, height: 58)
+        .frame(width: 520, height: 54)
         .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color.white.opacity(0.04))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.45),
-                            Color.white.opacity(0.18),
-                            Color.white.opacity(0.08)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(
+                            isSearchFocused
+                                ? Color.white.opacity(0.35)
+                                : Color.white.opacity(0.12),
+                            lineWidth: isSearchFocused ? 1.5 : 1
+                        )
+                )
+                .shadow(
+                    color: Color.black.opacity(isSearchFocused ? 0.25 : 0.15),
+                    radius: isSearchFocused ? 20 : 12,
+                    x: 0,
+                    y: isSearchFocused ? 8 : 4
                 )
         )
+        .animation(.easeOut(duration: 0.2), value: isSearchFocused)
     }
 
-    private func actionBadge(title: String) -> some View {
-        Text(title)
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 11)
-            .padding(.vertical, 7)
-            .background(Color.white.opacity(0.07), in: Capsule())
-    }
 
-    private func headerButton(systemImage: String, action: @escaping () -> Void, helpText: String) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.primary)
-                .frame(width: 42, height: 42)
-                .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .help(helpText)
-    }
-
-    private func footerHint(systemImage: String, title: String) -> some View {
-        Label(title, systemImage: systemImage)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(Color.white.opacity(0.08), in: Capsule())
-    }
 
     private func backgroundAccent(geometry: GeometryProxy) -> some View {
         ZStack {
@@ -1069,18 +1056,24 @@ struct LauncherView: View {
     }
 
     private var pageIndicator: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             ForEach(0..<viewModel.totalPages, id: \.self) { page in
-                Circle()
-                    .fill(page == viewModel.currentPage ? Color.white.opacity(0.9) : Color.white.opacity(0.3))
-                    .frame(width: page == viewModel.currentPage ? 7 : 6, height: page == viewModel.currentPage ? 7 : 6)
-                    .animation(.easeInOut(duration: 0.2), value: viewModel.currentPage)
+                Capsule()
+                    .fill(page == viewModel.currentPage ? Color.white : Color.white.opacity(0.35))
+                    .frame(width: page == viewModel.currentPage ? 18 : 6, height: 6)
+                    .onTapGesture {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            viewModel.currentPage = page
+                        }
+                    }
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.black.opacity(0.2), in: Capsule())
-        .allowsHitTesting(false)
+        .background(
+            Capsule()
+                .fill(Color.black.opacity(0.25))
+        )
     }
 }
 

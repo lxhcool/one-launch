@@ -7,23 +7,25 @@ struct FolderCardView: View {
     let onOpenFolder: () -> Void
     let onLaunchApp: (AppItem) -> Void
 
+    @State private var isHovered = false
+
     private let previewGridCount = 3
-    private var entryTileIndex: Int { previewGridCount * previewGridCount - 1 } // 8
+    private var entryTileIndex: Int { previewGridCount * previewGridCount - 1 }
 
     private var cornerRadius: Double {
         max(12, iconSize * 0.18)
     }
 
     private var clickablePreviewApps: [AppItem] {
-        Array(apps.prefix(entryTileIndex)) // 8 个可点
+        Array(apps.prefix(entryTileIndex))
     }
 
     private var cardHeight: Double {
-        iconSize + 42
+        iconSize + 36
     }
 
     private var cardWidth: Double {
-        iconSize + 10
+        iconSize + 6
     }
 
     private var tileGap: Double {
@@ -41,14 +43,15 @@ struct FolderCardView: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             ZStack {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(Color.white.opacity(0.10))
+                    .fill(Color.white.opacity(0.08))
                     .overlay(
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .stroke(Color.white.opacity(0.22), lineWidth: 1)
+                            .stroke(Color.white.opacity(isHovered ? 0.3 : 0.15), lineWidth: isHovered ? 1.5 : 1)
                     )
+                    .shadow(color: Color.black.opacity(0.15), radius: 4, x: 0, y: 2)
 
                 VStack(spacing: tileGap) {
                     ForEach(0..<previewGridCount, id: \.self) { row in
@@ -60,23 +63,26 @@ struct FolderCardView: View {
                         }
                     }
                 }
+                .scaleEffect(isHovered ? 1.02 : 1)
+                .animation(.easeOut(duration: 0.15), value: isHovered)
             }
             .frame(width: cardWidth)
 
             Text(folder.name)
-                .font(.system(size: max(11, iconSize * 0.19), weight: .medium))
+                .font(.system(size: max(10, iconSize * 0.155), weight: .medium))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(width: cardWidth)
         }
-        .frame(width: cardWidth)
-        .frame(minHeight: cardHeight, maxHeight: cardHeight, alignment: .top)
-        .padding(.vertical, 8)
-        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .frame(width: cardWidth + 6, height: cardHeight, alignment: .top)
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
         .onTapGesture(perform: onOpenFolder)
+        .onHover { hovering in
+            isHovered = hovering
+        }
         .help(apps.map(\.name).joined(separator: "\n"))
-        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     @ViewBuilder
@@ -87,9 +93,12 @@ struct FolderCardView: View {
             Button(action: onOpenFolder) {
                 Image(systemName: "ellipsis")
                     .font(.system(size: max(9, tileSize * 0.40), weight: .bold))
-                    .foregroundStyle(Color.white.opacity(0.92))
+                    .foregroundStyle(Color.white.opacity(0.9))
                     .frame(width: tileSize, height: tileSize)
-                    .background(Color.white.opacity(0.16), in: RoundedRectangle(cornerRadius: tileCorner, style: .continuous))
+                    .background(
+                        RoundedRectangle(cornerRadius: tileCorner, style: .continuous)
+                            .fill(Color.white.opacity(0.15))
+                    )
             }
             .buttonStyle(.plain)
         } else if clickablePreviewApps.indices.contains(index) {
@@ -99,7 +108,6 @@ struct FolderCardView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: tileSize, height: tileSize)
-                    .scaleEffect(1.03)
                     .clipShape(RoundedRectangle(cornerRadius: tileCorner, style: .continuous))
             }
             .buttonStyle(.plain)
