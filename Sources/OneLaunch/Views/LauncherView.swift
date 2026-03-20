@@ -60,7 +60,7 @@ struct LauncherView: View {
     }
 
     private var contentBottomInset: CGFloat {
-        200
+        72
     }
 
     private var contentMaxWidth: CGFloat {
@@ -334,14 +334,6 @@ struct LauncherView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             GeometryReader { contentGeo in
-                let showsPinnedSidebar = !viewModel.pinnedApps.isEmpty
-                let gridWidth = max(
-                    0,
-                    contentGeo.size.width
-                        - (showsPinnedSidebar ? pinnedSidebarWidth : 0)
-                        - contentSectionsSpacing
-                )
-
                 if viewModel.gridItems.isEmpty && viewModel.pinnedApps.isEmpty {
                     ContentUnavailableView(
                         "该分类暂无应用",
@@ -350,126 +342,52 @@ struct LauncherView: View {
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    HStack(alignment: .top, spacing: contentSectionsSpacing) {
-                        if showsPinnedSidebar {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if !viewModel.pinnedApps.isEmpty {
                             pinnedAppsSection
-                                .frame(width: pinnedSidebarWidth, height: contentGeo.size.height, alignment: .top)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
 
-                        Group {
-                            if viewModel.gridItems.isEmpty {
-                                ContentUnavailableView(
-                                    "该分类暂无应用",
-                                    systemImage: "square.grid.2x2",
-                                    description: Text("试试切换到其他分类，或重新扫描应用列表")
-                                )
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            } else {
-                                HStack(spacing: 0) {
-                                    ForEach(0..<viewModel.totalPages, id: \.self) { page in
-                                        if abs(page - viewModel.currentPage) <= renderedPageDistance {
-                                            VStack(spacing: 0) {
-                                                LazyVGrid(columns: columns, spacing: 18) {
-                                                    ForEach(viewModel.gridItemsForPage(page)) { item in
-                                                        switch item {
-                                                        case let .app(app):
-                                                            appGridItem(for: app)
-                                                        case let .folder(folder):
-                                                            folderGridItem(for: folder)
-                                                        }
-                                                    }
-                                                }
-                                                .padding(.top, 24)
-                                                .padding(.horizontal, 24)
-                                                .padding(.bottom, 10)
-
-                                                Color.clear
-                                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                                    .contentShape(Rectangle())
-                                                    .onTapGesture {
-                                                        if viewModel.showSettings {
-                                                            dismissSettings()
-                                                        } else if viewModel.presentedFolder != nil {
-                                                            viewModel.closeFolder()
-                                                        } else {
-                                                            onClose()
-                                                        }
-                                                    }
+                        if viewModel.gridItems.isEmpty {
+                            ContentUnavailableView(
+                                "该分类暂无应用",
+                                systemImage: "square.grid.2x2",
+                                description: Text("试试切换到其他分类，或重新扫描应用列表")
+                            )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else {
+                            ScrollView(.vertical, showsIndicators: false) {
+                                VStack(spacing: 0) {
+                                    LazyVGrid(columns: columns, spacing: 18) {
+                                        ForEach(viewModel.gridItems) { item in
+                                            switch item {
+                                            case let .app(app):
+                                                appGridItem(for: app)
+                                            case let .folder(folder):
+                                                folderGridItem(for: folder)
                                             }
-                                            .frame(width: gridWidth, height: contentGeo.size.height, alignment: .top)
-                                            .allowsHitTesting(page == viewModel.currentPage)
-                                        } else {
-                                            Color.clear
-                                                .frame(width: gridWidth, height: contentGeo.size.height)
                                         }
                                     }
-                                }
-                                .offset(x: -CGFloat(viewModel.currentPage) * gridWidth + pageOffset)
-                                .frame(width: gridWidth, alignment: .leading)
-                                .contentShape(Rectangle())
-                                .clipped()
-                                .overlay(alignment: .bottom) {
-                                    if viewModel.totalPages > 1 {
-                                        pageIndicator
-                                            .padding(.bottom, 18)
-                                    }
-                                }
-                                .gesture(
-                                    DragGesture(minimumDistance: 6, coordinateSpace: .local)
-                                        .onChanged { value in
-                                            guard canHandlePageSwipe else { return }
-                                            guard viewModel.totalPages > 1 else { return }
+                                    .padding(.top, 10)
+                                    .padding(.horizontal, 4)
+                                    .padding(.bottom, 10)
 
-                                            let horizontal = abs(value.translation.width)
-                                            let vertical = abs(value.translation.height)
-                                            guard horizontal > max(6, vertical * 0.8) else { return }
-
-                                            pageOffset = adjustedPageOffset(for: value.translation.width)
-                                        }
-                                        .onEnded { value in
-                                            guard canHandlePageSwipe else { return }
-                                            guard viewModel.totalPages > 1 else { return }
-
-                                            let current = adjustedPageOffset(for: value.translation.width)
-                                            let predicted = adjustedPageOffset(for: value.predictedEndTranslation.width)
-                                            let effective: CGFloat
-                                            if abs(predicted) > abs(current) {
-                                                effective = predicted
+                                    Color.clear
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                        .contentShape(Rectangle())
+                                        .onTapGesture {
+                                            if viewModel.showSettings {
+                                                dismissSettings()
+                                            } else if viewModel.presentedFolder != nil {
+                                                viewModel.closeFolder()
                                             } else {
-                                                effective = current
-                                            }
-                                            let threshold = pageSwipeThreshold(for: gridWidth)
-
-                                            var targetPage = viewModel.currentPage
-                                            if effective < -threshold {
-                                                targetPage = min(viewModel.totalPages - 1, viewModel.currentPage + 1)
-                                            } else if effective > threshold {
-                                                targetPage = max(0, viewModel.currentPage - 1)
-                                            }
-
-                                            withAnimation(pageTransitionAnimation) {
-                                                viewModel.currentPage = targetPage
-                                                pageOffset = 0
+                                                onClose()
                                             }
                                         }
-                                )
-                                .onChange(of: viewModel.totalPages) { _, totalPages in
-                                    let maxPage = max(0, totalPages - 1)
-                                    if viewModel.currentPage > maxPage {
-                                        viewModel.currentPage = maxPage
-                                    }
                                 }
+                                .frame(maxWidth: .infinity, alignment: .top)
                             }
                         }
-                        .frame(width: gridWidth, height: contentGeo.size.height, alignment: .top)
-                        .background(
-                            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                                .fill(Color.white.opacity(0.035))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                                        .stroke(Color.white.opacity(0.07), lineWidth: 1)
-                                )
-                        )
                     }
                     .frame(width: contentGeo.size.width, height: contentGeo.size.height, alignment: .topLeading)
                 }
@@ -478,9 +396,11 @@ struct LauncherView: View {
     }
 
     private var pinnedAppsSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        let pinnedIconSize = max(28, min(settingsStore.iconSize - 22, 36))
+
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Label("固定", systemImage: "pin.fill")
+                Text("固定")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.primary)
 
@@ -494,36 +414,46 @@ struct LauncherView: View {
                             .fill(Color.white.opacity(0.08))
                     )
             }
+            .padding(.horizontal, 4)
 
-            ScrollView(.vertical, showsIndicators: false) {
-                LazyVGrid(columns: pinnedColumns, spacing: 16) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
                     ForEach(viewModel.pinnedApps) { app in
-                        AppCardView(app: app, iconSize: effectiveIconSize) {
-                            onClose()
-                            viewModel.launch(app)
-                        }
-                        .contextMenu {
-                            customCategoryContextMenu(for: app)
-                        }
+                        compactPinnedAppItem(for: app, iconSize: pinnedIconSize)
+                            .contextMenu {
+                                customCategoryContextMenu(for: app)
+                            }
                     }
                 }
-                .padding(.top, 4)
-                .padding(.bottom, 8)
-                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 18)
-        .padding(.bottom, 12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(Color.white.opacity(0.05))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        .padding(.leading, 34)
+    }
+
+    private func compactPinnedAppItem(for app: AppItem, iconSize: Double) -> some View {
+        Button {
+            onClose()
+            viewModel.launch(app)
+        } label: {
+            Image(nsImage: iconProvider.icon(for: app))
+                .resizable()
+                .interpolation(.high)
+                .frame(width: iconSize, height: iconSize)
+                .clipShape(RoundedRectangle(cornerRadius: max(8, iconSize * 0.22), style: .continuous))
+                .padding(7)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.white.opacity(0.045))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                        )
                 )
-        )
+        }
+        .buttonStyle(.plain)
+        .help(app.name)
     }
 
     @ViewBuilder
