@@ -243,6 +243,9 @@ struct SettingsView: View {
                 categoryPositionArea
 
                 Divider().overlay(Color.white.opacity(0.06))
+                categoryVisibilityArea
+
+                Divider().overlay(Color.white.opacity(0.06))
 
                 // 新增分类区域
                 addCategoryArea
@@ -308,6 +311,71 @@ struct SettingsView: View {
                         )
                     }
                     .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private var categoryVisibilityArea: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "eye")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+
+                Text("分类显示")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+
+                Spacer()
+
+                Button("全部显示") {
+                    settingsStore.hiddenSystemCategoryRawValues = []
+                    settingsStore.hiddenCustomCategoryIDs = []
+                }
+                .buttonStyle(SettingsButtonStyle())
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("系统分类")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+
+                ForEach(settingsStore.orderedSystemCategories, id: \.rawValue) { category in
+                    CategoryVisibilityRow(
+                        icon: category.icon,
+                        title: category.rawValue,
+                        isHidden: settingsStore.isSystemCategoryHidden(category),
+                        isLocked: category == .all,
+                        onToggle: {
+                            settingsStore.setSystemCategoryHidden(
+                                category,
+                                hidden: !settingsStore.isSystemCategoryHidden(category)
+                            )
+                        }
+                    )
+                }
+
+                if !settingsStore.customCategories.isEmpty {
+                    Text("自定义分类")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
+
+                    ForEach(settingsStore.customCategories, id: \.id) { category in
+                        CategoryVisibilityRow(
+                            icon: "tag",
+                            title: category.name,
+                            isHidden: settingsStore.isCustomCategoryHidden(category.id),
+                            isLocked: false,
+                            onToggle: {
+                                settingsStore.setCustomCategoryHidden(
+                                    category.id,
+                                    hidden: !settingsStore.isCustomCategoryHidden(category.id)
+                                )
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -857,6 +925,70 @@ struct CategoryActionButtonStyle: ButtonStyle {
             )
             .scaleEffect(configuration.isPressed ? 0.9 : 1)
             .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
+
+struct CategoryVisibilityRow: View {
+    let icon: String
+    let title: String
+    let isHidden: Bool
+    let isLocked: Bool
+    let onToggle: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .medium))
+                .frame(width: 18)
+                .foregroundStyle(.secondary)
+
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+
+            Spacer(minLength: 8)
+
+            if isLocked {
+                Text("固定显示")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary.opacity(0.8))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule()
+                            .fill(Color.white.opacity(0.07))
+                    )
+            } else {
+                Button(action: onToggle) {
+                    Label(isHidden ? "已隐藏" : "显示中", systemImage: isHidden ? "eye.slash" : "eye")
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .foregroundStyle(isHidden ? Color.secondary : Color.accentColor)
+                }
+                .buttonStyle(.plain)
+                .background(
+                    Capsule()
+                        .fill(isHidden ? Color.white.opacity(0.08) : Color.accentColor.opacity(0.14))
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(isHidden ? Color.white.opacity(0.12) : Color.accentColor.opacity(0.35), lineWidth: 1)
+                )
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(isHovered ? Color.white.opacity(0.06) : Color.clear)
+        )
+        .onHover { hovering in
+            isHovered = hovering
+        }
     }
 }
 

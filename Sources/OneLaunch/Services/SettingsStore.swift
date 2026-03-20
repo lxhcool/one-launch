@@ -61,6 +61,8 @@ final class SettingsStore: ObservableObject {
         static let customCategories = "settings.customCategories"
         static let systemCategoryOverrides = "settings.systemCategoryOverrides"
         static let systemCategoryOrder = "settings.systemCategoryOrder"
+        static let hiddenSystemCategoryRawValues = "settings.hiddenSystemCategoryRawValues"
+        static let hiddenCustomCategoryIDs = "settings.hiddenCustomCategoryIDs"
         static let categoryBarPosition = "settings.categoryBarPosition"
     }
 
@@ -118,6 +120,14 @@ final class SettingsStore: ObservableObject {
                 return
             }
             saveCustomCategories(customCategories)
+
+            let normalizedHiddenIDs = Self.normalizeHiddenCustomCategoryIDs(
+                hiddenCustomCategoryIDs,
+                categories: customCategories
+            )
+            if normalizedHiddenIDs != hiddenCustomCategoryIDs {
+                hiddenCustomCategoryIDs = normalizedHiddenIDs
+            }
         }
     }
 
@@ -140,6 +150,31 @@ final class SettingsStore: ObservableObject {
                 return
             }
             saveSystemCategoryOrder(systemCategoryOrder)
+        }
+    }
+
+    @Published var hiddenSystemCategoryRawValues: [String] {
+        didSet {
+            let normalized = Self.normalizeHiddenSystemCategoryRawValues(hiddenSystemCategoryRawValues)
+            if normalized != hiddenSystemCategoryRawValues {
+                hiddenSystemCategoryRawValues = normalized
+                return
+            }
+            saveHiddenSystemCategoryRawValues(hiddenSystemCategoryRawValues)
+        }
+    }
+
+    @Published var hiddenCustomCategoryIDs: [String] {
+        didSet {
+            let normalized = Self.normalizeHiddenCustomCategoryIDs(
+                hiddenCustomCategoryIDs,
+                categories: customCategories
+            )
+            if normalized != hiddenCustomCategoryIDs {
+                hiddenCustomCategoryIDs = normalized
+                return
+            }
+            saveHiddenCustomCategoryIDs(hiddenCustomCategoryIDs)
         }
     }
 
@@ -176,9 +211,12 @@ final class SettingsStore: ObservableObject {
         self.backgroundBlurRadius = storedBlurRadius > 0 ? min(36, max(0, storedBlurRadius)) : 18
         self.manualAppOrder = defaults.stringArray(forKey: Key.manualAppOrder) ?? []
         self.appFolders = Self.loadFolders(from: defaults)
-        self.customCategories = Self.loadCustomCategories(from: defaults)
+        let loadedCustomCategories = Self.loadCustomCategories(from: defaults)
+        self.customCategories = loadedCustomCategories
         self.systemCategoryOverrides = Self.loadSystemCategoryOverrides(from: defaults)
         self.systemCategoryOrder = Self.loadSystemCategoryOrder(from: defaults)
+        self.hiddenSystemCategoryRawValues = Self.loadHiddenSystemCategoryRawValues(from: defaults)
+        self.hiddenCustomCategoryIDs = Self.loadHiddenCustomCategoryIDs(from: defaults, categories: loadedCustomCategories)
         let storedCategoryBarPosition = defaults.string(forKey: Key.categoryBarPosition) ?? CategoryBarPosition.left.rawValue
         self.categoryBarPosition = CategoryBarPosition(rawValue: storedCategoryBarPosition) ?? .left
         self.launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -202,6 +240,8 @@ final class SettingsStore: ObservableObject {
         customCategories = []
         systemCategoryOverrides = [:]
         systemCategoryOrder = Self.defaultSystemCategoryOrderRawValues()
+        hiddenSystemCategoryRawValues = []
+        hiddenCustomCategoryIDs = []
         categoryBarPosition = .left
     }
 
@@ -306,6 +346,41 @@ final class SettingsStore: ObservableObject {
         let moved = categories.remove(at: index)
         categories.insert(moved, at: index + 1)
         systemCategoryOrder = categories.map(\.rawValue)
+    }
+
+    func isSystemCategoryHidden(_ category: AppCategory) -> Bool {
+        guard category != .all else { return false }
+        return hiddenSystemCategoryRawValues.contains(category.rawValue)
+    }
+
+    func setSystemCategoryHidden(_ category: AppCategory, hidden: Bool) {
+        guard category != .all else { return }
+
+        var rawValues = hiddenSystemCategoryRawValues
+        rawValues.removeAll { $0 == category.rawValue }
+
+        if hidden {
+            rawValues.append(category.rawValue)
+        }
+
+        hiddenSystemCategoryRawValues = rawValues
+    }
+
+    func isCustomCategoryHidden(_ categoryID: String) -> Bool {
+        hiddenCustomCategoryIDs.contains(categoryID)
+    }
+
+    func setCustomCategoryHidden(_ categoryID: String, hidden: Bool) {
+        guard customCategories.contains(where: { $0.id == categoryID }) else { return }
+
+        var categoryIDs = hiddenCustomCategoryIDs
+        categoryIDs.removeAll { $0 == categoryID }
+
+        if hidden {
+            categoryIDs.append(categoryID)
+        }
+
+        hiddenCustomCategoryIDs = categoryIDs
     }
 
     func isApp(_ appID: String, inCustomCategory categoryID: String) -> Bool {
@@ -726,6 +801,34 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    private static func loadHiddenSystemCategoryRawValues(from defaults: UserDefaults) -> [String] {
+        let stored = defaults.stringArray(forKey: Key.hiddenSystemCategoryRawValues) ?? []
+        return normalizeHiddenSystemCategoryRawValues(stored)
+    }
+
+    private func saveHiddenSystemCategoryRawValues(_ rawValues: [String]) {
+        let normalized = Self.normalizeHiddenSystemCategoryRawValues(rawValues)
+        if normalized.isEmpty {
+            defaults.removeObject(forKey: Key.hiddenSystemCategoryRawValues)
+        } else {
+            defaults.set(normalized, forKey: Key.hiddenSystemCategoryRawValues)
+        }
+    }
+
+    private static func loadHiddenCustomCategoryIDs(from defaults: UserDefaults, categories: [CustomCategory]) -> [String] {
+        let stored = defaults.stringArray(forKey: Key.hiddenCustomCategoryIDs) ?? []
+        return normalizeHiddenCustomCategoryIDs(stored, categories: categories)
+    }
+
+    private func saveHiddenCustomCategoryIDs(_ categoryIDs: [String]) {
+        let normalized = Self.normalizeHiddenCustomCategoryIDs(categoryIDs, categories: customCategories)
+        if normalized.isEmpty {
+            defaults.removeObject(forKey: Key.hiddenCustomCategoryIDs)
+        } else {
+            defaults.set(normalized, forKey: Key.hiddenCustomCategoryIDs)
+        }
+    }
+
     private static func normalizeCustomCategories(_ categories: [CustomCategory]) -> [CustomCategory] {
         var seenIDs = Set<String>()
         var seenAppIDsAcrossCategories = Set<String>()
@@ -762,6 +865,28 @@ final class SettingsStore: ObservableObject {
             guard validRawValues.contains(rawValue) else { return nil }
             guard seen.insert(rawValue).inserted else { return nil }
             return rawValue
+        }
+    }
+
+    private static func normalizeHiddenSystemCategoryRawValues(_ rawValues: [String]) -> [String] {
+        var seen = Set<String>()
+        let validRawValues = Set(AppCategory.allCases.filter { $0 != .all }.map(\.rawValue))
+
+        return rawValues.compactMap { rawValue in
+            guard validRawValues.contains(rawValue) else { return nil }
+            guard seen.insert(rawValue).inserted else { return nil }
+            return rawValue
+        }
+    }
+
+    private static func normalizeHiddenCustomCategoryIDs(_ categoryIDs: [String], categories: [CustomCategory]) -> [String] {
+        var seen = Set<String>()
+        let validIDs = Set(categories.map(\.id))
+
+        return categoryIDs.compactMap { id in
+            guard validIDs.contains(id) else { return nil }
+            guard seen.insert(id).inserted else { return nil }
+            return id
         }
     }
 

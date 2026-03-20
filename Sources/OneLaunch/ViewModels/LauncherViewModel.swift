@@ -127,16 +127,32 @@ final class LauncherViewModel: ObservableObject {
         resolvedSettingsStore.$customCategories
             .dropFirst()
             .receive(on: RunLoop.main)
-            .sink { [weak self] categories in
-                guard let self else { return }
+            .sink { [weak self] _ in
+                self?.handleCategorySidebarConfigurationChange()
+            }
+            .store(in: &cancellables)
 
-                if case let .custom(categoryID) = self.selectedCategory,
-                   !categories.contains(where: { $0.id == categoryID }) {
-                    self.selectedCategory = .builtIn(.all)
-                    return
-                }
+        resolvedSettingsStore.$systemCategoryOrder
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.handleCategorySidebarConfigurationChange()
+            }
+            .store(in: &cancellables)
 
-                self.rebuildGridCaches()
+        resolvedSettingsStore.$hiddenSystemCategoryRawValues
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.handleCategorySidebarConfigurationChange()
+            }
+            .store(in: &cancellables)
+
+        resolvedSettingsStore.$hiddenCustomCategoryIDs
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.handleCategorySidebarConfigurationChange()
             }
             .store(in: &cancellables)
 
@@ -203,6 +219,9 @@ final class LauncherViewModel: ObservableObject {
     }
 
     var categorySidebarItems: [CategorySidebarItem] {
+        let hiddenSystemCategories = Set(settingsStore.hiddenSystemCategoryRawValues)
+        let hiddenCustomCategoryIDs = Set(settingsStore.hiddenCustomCategoryIDs)
+
         let builtIn = settingsStore.orderedSystemCategories.map {
             CategorySidebarItem(
                 selection: .builtIn($0),
@@ -210,6 +229,12 @@ final class LauncherViewModel: ObservableObject {
                 icon: $0.icon,
                 isCustom: false
             )
+        }
+        .filter { item in
+            if case let .builtIn(category) = item.selection {
+                return category == .all || !hiddenSystemCategories.contains(category.rawValue)
+            }
+            return true
         }
 
         let custom = settingsStore.customCategories.map {
@@ -219,6 +244,12 @@ final class LauncherViewModel: ObservableObject {
                 icon: "tag",
                 isCustom: true
             )
+        }
+        .filter { item in
+            if case let .custom(categoryID) = item.selection {
+                return !hiddenCustomCategoryIDs.contains(categoryID)
+            }
+            return true
         }
 
         return builtIn + custom
@@ -322,6 +353,10 @@ final class LauncherViewModel: ObservableObject {
     }
 
     private func rebuildGridCaches() {
+        guard !ensureSelectedCategoryVisible() else {
+            return
+        }
+
         let apps = filteredGridApps
         let displays = resolveFolders(for: apps)
 
@@ -356,6 +391,28 @@ final class LauncherViewModel: ObservableObject {
         if let activeFolderID, !displays.contains(where: { $0.id == activeFolderID }) {
             self.activeFolderID = nil
         }
+    }
+
+    private func handleCategorySidebarConfigurationChange() {
+        if ensureSelectedCategoryVisible() {
+            return
+        }
+        rebuildGridCaches()
+    }
+
+    private func ensureSelectedCategoryVisible() -> Bool {
+        let visibleSelections = Set(categorySidebarItems.map(\.selection))
+        guard !visibleSelections.contains(selectedCategory) else {
+            return false
+        }
+
+        let fallback = categorySidebarItems.first?.selection ?? .builtIn(.all)
+        guard fallback != selectedCategory else {
+            return false
+        }
+
+        selectedCategory = fallback
+        return true
     }
 
     /// 在后台线程执行，用于避免主线程卡顿（UserDefaults 读取 + 排序）

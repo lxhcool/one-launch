@@ -521,6 +521,26 @@ struct LauncherView: View {
             Label("下移", systemImage: "chevron.down")
         }
         .disabled(!viewModel.canMoveCategoryDown(category.selection))
+
+        Divider()
+
+        switch category.selection {
+        case .builtIn(.all):
+            Button("“全部”分类不可隐藏") {}
+                .disabled(true)
+        case let .builtIn(systemCategory):
+            Button(role: .destructive) {
+                settingsStore.setSystemCategoryHidden(systemCategory, hidden: true)
+            } label: {
+                Label("隐藏此分类", systemImage: "eye.slash")
+            }
+        case let .custom(categoryID):
+            Button(role: .destructive) {
+                settingsStore.setCustomCategoryHidden(categoryID, hidden: true)
+            } label: {
+                Label("隐藏此分类", systemImage: "eye.slash")
+            }
+        }
     }
 
     private var appGrid: some View {
