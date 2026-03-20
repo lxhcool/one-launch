@@ -40,8 +40,33 @@ struct LauncherView: View {
         return [GridItem(.adaptive(minimum: minimum, maximum: maximum), spacing: 16)]
     }
 
+    private var pinnedColumns: [GridItem] {
+        [
+            GridItem(.flexible(minimum: 0, maximum: 132), spacing: 14),
+            GridItem(.flexible(minimum: 0, maximum: 132), spacing: 14)
+        ]
+    }
+
+    private var pinnedSidebarWidth: CGFloat {
+        272
+    }
+
+    private var contentSectionsSpacing: CGFloat {
+        viewModel.pinnedApps.isEmpty ? 0 : 28
+    }
+
+    private var contentWidthBoost: CGFloat {
+        96
+    }
+
+    private var contentBottomInset: CGFloat {
+        200
+    }
+
     private var contentMaxWidth: CGFloat {
         CGFloat(settingsStore.listContentWidth)
+            + contentWidthBoost
+            + (viewModel.pinnedApps.isEmpty ? 0 : pinnedSidebarWidth + contentSectionsSpacing)
     }
 
     private var gridItemIDs: [String] {
@@ -85,7 +110,7 @@ struct LauncherView: View {
                 .frame(maxWidth: contentMaxWidth, maxHeight: .infinity, alignment: .top)
                 .padding(.horizontal, 52)
                 .padding(.top, max(geometry.safeAreaInsets.top + 26, 44))
-                .padding(.bottom, 14)
+                .padding(.bottom, contentBottomInset)
 
                 topLeadingMeta(geometry: geometry)
 
@@ -308,8 +333,16 @@ struct LauncherView: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            GeometryReader { gridGeo in
-                if !viewModel.isSearching && viewModel.gridItems.isEmpty {
+            GeometryReader { contentGeo in
+                let showsPinnedSidebar = !viewModel.pinnedApps.isEmpty
+                let gridWidth = max(
+                    0,
+                    contentGeo.size.width
+                        - (showsPinnedSidebar ? pinnedSidebarWidth : 0)
+                        - contentSectionsSpacing
+                )
+
+                if viewModel.gridItems.isEmpty && viewModel.pinnedApps.isEmpty {
                     ContentUnavailableView(
                         "该分类暂无应用",
                         systemImage: "square.grid.2x2",
@@ -317,105 +350,180 @@ struct LauncherView: View {
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    VStack(spacing: 0) {
-                        HStack(spacing: 0) {
-                            ForEach(0..<viewModel.totalPages, id: \.self) { page in
-                                if abs(page - viewModel.currentPage) <= renderedPageDistance {
-                                    VStack(spacing: 0) {
-                                        LazyVGrid(columns: columns, spacing: 18) {
-                                            ForEach(viewModel.gridItemsForPage(page)) { item in
-                                                switch item {
-                                                case let .app(app):
-                                                    appGridItem(for: app)
-                                                case let .folder(folder):
-                                                    folderGridItem(for: folder)
+                    HStack(alignment: .top, spacing: contentSectionsSpacing) {
+                        if showsPinnedSidebar {
+                            pinnedAppsSection
+                                .frame(width: pinnedSidebarWidth, height: contentGeo.size.height, alignment: .top)
+                        }
+
+                        Group {
+                            if viewModel.gridItems.isEmpty {
+                                ContentUnavailableView(
+                                    "该分类暂无应用",
+                                    systemImage: "square.grid.2x2",
+                                    description: Text("试试切换到其他分类，或重新扫描应用列表")
+                                )
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            } else {
+                                HStack(spacing: 0) {
+                                    ForEach(0..<viewModel.totalPages, id: \.self) { page in
+                                        if abs(page - viewModel.currentPage) <= renderedPageDistance {
+                                            VStack(spacing: 0) {
+                                                LazyVGrid(columns: columns, spacing: 18) {
+                                                    ForEach(viewModel.gridItemsForPage(page)) { item in
+                                                        switch item {
+                                                        case let .app(app):
+                                                            appGridItem(for: app)
+                                                        case let .folder(folder):
+                                                            folderGridItem(for: folder)
+                                                        }
+                                                    }
                                                 }
+                                                .padding(.top, 24)
+                                                .padding(.horizontal, 24)
+                                                .padding(.bottom, 10)
+
+                                                Color.clear
+                                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                                    .contentShape(Rectangle())
+                                                    .onTapGesture {
+                                                        if viewModel.showSettings {
+                                                            dismissSettings()
+                                                        } else if viewModel.presentedFolder != nil {
+                                                            viewModel.closeFolder()
+                                                        } else {
+                                                            onClose()
+                                                        }
+                                                    }
+                                            }
+                                            .frame(width: gridWidth, height: contentGeo.size.height, alignment: .top)
+                                            .allowsHitTesting(page == viewModel.currentPage)
+                                        } else {
+                                            Color.clear
+                                                .frame(width: gridWidth, height: contentGeo.size.height)
+                                        }
+                                    }
+                                }
+                                .offset(x: -CGFloat(viewModel.currentPage) * gridWidth + pageOffset)
+                                .frame(width: gridWidth, alignment: .leading)
+                                .contentShape(Rectangle())
+                                .clipped()
+                                .overlay(alignment: .bottom) {
+                                    if viewModel.totalPages > 1 {
+                                        pageIndicator
+                                            .padding(.bottom, 18)
+                                    }
+                                }
+                                .gesture(
+                                    DragGesture(minimumDistance: 6, coordinateSpace: .local)
+                                        .onChanged { value in
+                                            guard canHandlePageSwipe else { return }
+                                            guard viewModel.totalPages > 1 else { return }
+
+                                            let horizontal = abs(value.translation.width)
+                                            let vertical = abs(value.translation.height)
+                                            guard horizontal > max(6, vertical * 0.8) else { return }
+
+                                            pageOffset = adjustedPageOffset(for: value.translation.width)
+                                        }
+                                        .onEnded { value in
+                                            guard canHandlePageSwipe else { return }
+                                            guard viewModel.totalPages > 1 else { return }
+
+                                            let current = adjustedPageOffset(for: value.translation.width)
+                                            let predicted = adjustedPageOffset(for: value.predictedEndTranslation.width)
+                                            let effective: CGFloat
+                                            if abs(predicted) > abs(current) {
+                                                effective = predicted
+                                            } else {
+                                                effective = current
+                                            }
+                                            let threshold = pageSwipeThreshold(for: gridWidth)
+
+                                            var targetPage = viewModel.currentPage
+                                            if effective < -threshold {
+                                                targetPage = min(viewModel.totalPages - 1, viewModel.currentPage + 1)
+                                            } else if effective > threshold {
+                                                targetPage = max(0, viewModel.currentPage - 1)
+                                            }
+
+                                            withAnimation(pageTransitionAnimation) {
+                                                viewModel.currentPage = targetPage
+                                                pageOffset = 0
                                             }
                                         }
-                                        .padding(.top, 24)
-                                        .padding(.horizontal, 24)
-                                        .padding(.bottom, 10)
-
-                                        Color.clear
-                                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                            .contentShape(Rectangle())
-                                            .onTapGesture {
-                                                if viewModel.showSettings {
-                                                    dismissSettings()
-                                                } else if viewModel.presentedFolder != nil {
-                                                    viewModel.closeFolder()
-                                                } else {
-                                                    onClose()
-                                                }
-                                            }
+                                )
+                                .onChange(of: viewModel.totalPages) { _, totalPages in
+                                    let maxPage = max(0, totalPages - 1)
+                                    if viewModel.currentPage > maxPage {
+                                        viewModel.currentPage = maxPage
                                     }
-                                    .frame(width: gridGeo.size.width, height: gridGeo.size.height, alignment: .top)
-                                    .allowsHitTesting(page == viewModel.currentPage)
-                                } else {
-                                    Color.clear
-                                        .frame(width: gridGeo.size.width, height: gridGeo.size.height)
                                 }
                             }
                         }
-                        .offset(x: -CGFloat(viewModel.currentPage) * gridGeo.size.width + pageOffset)
-                        .frame(width: gridGeo.size.width, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .clipped()
-                        .overlay(alignment: .bottom) {
-                            if viewModel.totalPages > 1 {
-                                pageIndicator
-                                    .padding(.bottom, 18)
-                            }
-                        }
-                        .gesture(
-                            DragGesture(minimumDistance: 6, coordinateSpace: .local)
-                                .onChanged { value in
-                                    guard canHandlePageSwipe else { return }
-                                    guard viewModel.totalPages > 1 else { return }
-
-                                    let horizontal = abs(value.translation.width)
-                                    let vertical = abs(value.translation.height)
-                                    guard horizontal > max(6, vertical * 0.8) else { return }
-
-                                    pageOffset = adjustedPageOffset(for: value.translation.width)
-                                }
-                                .onEnded { value in
-                                    guard canHandlePageSwipe else { return }
-                                    guard viewModel.totalPages > 1 else { return }
-
-                                    let current = adjustedPageOffset(for: value.translation.width)
-                                    let predicted = adjustedPageOffset(for: value.predictedEndTranslation.width)
-                                    let effective: CGFloat
-                                    if abs(predicted) > abs(current) {
-                                        effective = predicted
-                                    } else {
-                                        effective = current
-                                    }
-                                    let threshold = pageSwipeThreshold(for: gridGeo.size.width)
-
-                                    var targetPage = viewModel.currentPage
-                                    if effective < -threshold {
-                                        targetPage = min(viewModel.totalPages - 1, viewModel.currentPage + 1)
-                                    } else if effective > threshold {
-                                        targetPage = max(0, viewModel.currentPage - 1)
-                                    }
-
-                                    withAnimation(pageTransitionAnimation) {
-                                        viewModel.currentPage = targetPage
-                                        pageOffset = 0
-                                    }
-                                }
+                        .frame(width: gridWidth, height: contentGeo.size.height, alignment: .top)
+                        .background(
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .fill(Color.white.opacity(0.035))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                        .stroke(Color.white.opacity(0.07), lineWidth: 1)
+                                )
                         )
-                        .onChange(of: viewModel.totalPages) { _, totalPages in
-                            let maxPage = max(0, totalPages - 1)
-                            if viewModel.currentPage > maxPage {
-                                viewModel.currentPage = maxPage
-                            }
-                        }
                     }
+                    .frame(width: contentGeo.size.width, height: contentGeo.size.height, alignment: .topLeading)
                 }
             }
         }
+    }
+
+    private var pinnedAppsSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Label("固定", systemImage: "pin.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+
+                Text("\(viewModel.pinnedApps.count)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(Color.white.opacity(0.08))
+                    )
+            }
+
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVGrid(columns: pinnedColumns, spacing: 16) {
+                    ForEach(viewModel.pinnedApps) { app in
+                        AppCardView(app: app, iconSize: effectiveIconSize) {
+                            onClose()
+                            viewModel.launch(app)
+                        }
+                        .contextMenu {
+                            customCategoryContextMenu(for: app)
+                        }
+                    }
+                }
+                .padding(.top, 4)
+                .padding(.bottom, 8)
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 18)
+        .padding(.bottom, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+        )
     }
 
     @ViewBuilder
@@ -932,6 +1040,15 @@ struct LauncherView: View {
         let customCategories = settingsStore.customCategories
         let effectiveSystemCategory = viewModel.effectiveSystemCategory(for: app)
         let hasSystemOverride = viewModel.hasSystemCategoryOverride(for: app.id)
+        let isPinned = viewModel.isPinned(app.id)
+
+        Button {
+            viewModel.togglePinnedState(for: app.id)
+        } label: {
+            Label(isPinned ? "取消固定" : "固定", systemImage: isPinned ? "pin.slash" : "pin")
+        }
+
+        Divider()
 
         Menu {
             ForEach(viewModel.editableSystemCategories, id: \.rawValue) { category in

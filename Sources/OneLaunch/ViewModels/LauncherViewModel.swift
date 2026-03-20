@@ -88,6 +88,7 @@ final class LauncherViewModel: ObservableObject {
     }
     @Published private(set) var filteredAppsCache: [AppItem] = []
     @Published private(set) var gridAppsCache: [AppItem] = []
+    @Published private(set) var pinnedAppsCache: [AppItem] = []
     @Published private(set) var folderDisplaysCache: [FolderDisplay] = []
     @Published private(set) var gridItemsCache: [LauncherGridItem] = []
     @Published var activeFolderID: String?
@@ -117,6 +118,14 @@ final class LauncherViewModel: ObservableObject {
         .store(in: &cancellables)
 
         resolvedSettingsStore.$appFolders
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.rebuildGridCaches()
+            }
+            .store(in: &cancellables)
+
+        resolvedSettingsStore.$pinnedAppIDs
             .dropFirst()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -259,6 +268,10 @@ final class LauncherViewModel: ObservableObject {
         folderDisplaysCache
     }
 
+    var pinnedApps: [AppItem] {
+        pinnedAppsCache
+    }
+
     var gridItems: [LauncherGridItem] {
         gridItemsCache
     }
@@ -358,7 +371,14 @@ final class LauncherViewModel: ObservableObject {
         }
 
         let apps = filteredGridApps
-        let displays = resolveFolders(for: apps)
+        let pinnedIDs = Set(settingsStore.pinnedAppIDs)
+        let appByID = Dictionary(
+            gridApps.map { ($0.id, $0) },
+            uniquingKeysWith: { existing, _ in existing }
+        )
+        let pinnedApps = settingsStore.pinnedAppIDs.compactMap { appByID[$0] }
+        let scrollableApps = apps.filter { !pinnedIDs.contains($0.id) }
+        let displays = resolveFolders(for: scrollableApps)
 
         let folderMap = Dictionary(
             displays.flatMap { display in
@@ -370,7 +390,7 @@ final class LauncherViewModel: ObservableObject {
         var seenFolders = Set<String>()
         var items: [LauncherGridItem] = []
 
-        for app in apps {
+        for app in scrollableApps {
             if let folder = folderMap[app.id] {
                 if seenFolders.insert(folder.id).inserted {
                     items.append(.folder(folder))
@@ -380,6 +400,7 @@ final class LauncherViewModel: ObservableObject {
             }
         }
 
+        pinnedAppsCache = pinnedApps
         folderDisplaysCache = displays
         gridItemsCache = items
 
@@ -592,6 +613,21 @@ final class LauncherViewModel: ObservableObject {
     func restoreAutoSystemCategory(for appID: String) {
         settingsStore.removeAppFromAllCustomCategories(appID)
         settingsStore.clearSystemCategoryOverride(appID: appID)
+    }
+
+    func isPinned(_ appID: String) -> Bool {
+        settingsStore.isAppPinned(appID)
+    }
+
+    func togglePinnedState(for appID: String) {
+        setPinned(appID, pinned: !isPinned(appID))
+    }
+
+    func setPinned(_ appID: String, pinned: Bool) {
+        if pinned {
+            removeAppFromFolderRecords(appID: appID)
+        }
+        settingsStore.setAppPinned(appID, pinned: pinned)
     }
 
     func canMoveCategoryUp(_ selection: CategorySelection) -> Bool {
@@ -940,6 +976,21 @@ final class LauncherViewModel: ObservableObject {
         }
 
         return normalized
+    }
+
+    private func removeAppFromFolderRecords(appID: String) {
+        guard let index = settingsStore.appFolders.firstIndex(where: { $0.appIDs.contains(appID) }) else {
+            return
+        }
+
+        var folders = settingsStore.appFolders
+        folders[index].appIDs.removeAll { $0 == appID }
+
+        if folders[index].appIDs.count < 2 {
+            folders.remove(at: index)
+        }
+
+        settingsStore.appFolders = folders
     }
 
     private func folderContaining(appID: String, in folders: [AppFolder]) -> String? {

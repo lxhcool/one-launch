@@ -57,6 +57,7 @@ final class SettingsStore: ObservableObject {
         static let backgroundImagePath = "settings.backgroundImagePath"
         static let backgroundBlurRadius = "settings.backgroundBlurRadius"
         static let manualAppOrder = "settings.manualAppOrder"
+        static let pinnedAppIDs = "settings.pinnedAppIDs"
         static let appFolders = "settings.appFolders"
         static let customCategories = "settings.customCategories"
         static let systemCategoryOverrides = "settings.systemCategoryOverrides"
@@ -106,6 +107,22 @@ final class SettingsStore: ObservableObject {
 
     @Published var manualAppOrder: [String] {
         didSet { defaults.set(manualAppOrder, forKey: Key.manualAppOrder) }
+    }
+
+    @Published var pinnedAppIDs: [String] {
+        didSet {
+            let normalized = Self.normalizePinnedAppIDs(pinnedAppIDs)
+            if normalized != pinnedAppIDs {
+                pinnedAppIDs = normalized
+                return
+            }
+
+            if pinnedAppIDs.isEmpty {
+                defaults.removeObject(forKey: Key.pinnedAppIDs)
+            } else {
+                defaults.set(pinnedAppIDs, forKey: Key.pinnedAppIDs)
+            }
+        }
     }
 
     @Published var appFolders: [AppFolder] {
@@ -210,6 +227,7 @@ final class SettingsStore: ObservableObject {
         let storedBlurRadius = defaults.double(forKey: Key.backgroundBlurRadius)
         self.backgroundBlurRadius = storedBlurRadius > 0 ? min(36, max(0, storedBlurRadius)) : 18
         self.manualAppOrder = defaults.stringArray(forKey: Key.manualAppOrder) ?? []
+        self.pinnedAppIDs = Self.normalizePinnedAppIDs(defaults.stringArray(forKey: Key.pinnedAppIDs) ?? [])
         self.appFolders = Self.loadFolders(from: defaults)
         let loadedCustomCategories = Self.loadCustomCategories(from: defaults)
         self.customCategories = loadedCustomCategories
@@ -236,6 +254,7 @@ final class SettingsStore: ObservableObject {
         backgroundBlurRadius = 18
         clearBackgroundImage()
         manualAppOrder = []
+        pinnedAppIDs = []
         appFolders = []
         customCategories = []
         systemCategoryOverrides = [:]
@@ -385,6 +404,24 @@ final class SettingsStore: ObservableObject {
 
     func isApp(_ appID: String, inCustomCategory categoryID: String) -> Bool {
         customCategories.first(where: { $0.id == categoryID })?.appIDs.contains(appID) == true
+    }
+
+    func isAppPinned(_ appID: String) -> Bool {
+        pinnedAppIDs.contains(appID)
+    }
+
+    func setAppPinned(_ appID: String, pinned: Bool) {
+        let normalizedAppID = appID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedAppID.isEmpty else { return }
+
+        var updated = pinnedAppIDs
+        updated.removeAll { $0 == normalizedAppID }
+
+        if pinned {
+            updated.append(normalizedAppID)
+        }
+
+        pinnedAppIDs = updated
     }
 
     func assignApp(_ appID: String, toCustomCategory categoryID: String) {
@@ -854,6 +891,17 @@ final class SettingsStore: ObservableObject {
             guard !appID.isEmpty else { return }
             guard pair.value != .all else { return }
             partialResult[appID] = pair.value
+        }
+    }
+
+    private static func normalizePinnedAppIDs(_ appIDs: [String]) -> [String] {
+        var seen = Set<String>()
+
+        return appIDs.compactMap { appID in
+            let normalized = appID.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !normalized.isEmpty else { return nil }
+            guard seen.insert(normalized).inserted else { return nil }
+            return normalized
         }
     }
 
