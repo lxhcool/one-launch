@@ -60,7 +60,7 @@ struct LauncherView: View {
     }
 
     private var contentBottomInset: CGFloat {
-        72
+        settingsStore.categoryBarPosition == .bottom ? 148 : 72
     }
 
     private var contentMaxWidth: CGFloat {
@@ -102,7 +102,7 @@ struct LauncherView: View {
                         }
                     }
 
-                VStack(spacing: 68) {
+                VStack(spacing: 40) {
                     header
 
                     content
@@ -368,7 +368,7 @@ struct LauncherView: View {
                                             }
                                         }
                                     }
-                                    .padding(.top, 10)
+                                    .padding(.top, 4)
                                     .padding(.horizontal, 4)
                                     .padding(.bottom, 10)
 
