@@ -21,6 +21,28 @@ enum SortMode: String, CaseIterable, Sendable {
     }
 }
 
+enum CategoryBarPosition: String, CaseIterable, Sendable {
+    case left = "left"
+    case right = "right"
+    case bottom = "bottom"
+
+    var displayName: String {
+        switch self {
+        case .left: return "左侧"
+        case .right: return "右侧"
+        case .bottom: return "下方"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .left: return "sidebar.left"
+        case .right: return "sidebar.right"
+        case .bottom: return "rectangle.bottomhalf.inset.filled"
+        }
+    }
+}
+
 @MainActor
 final class SettingsStore: ObservableObject {
     static let shared = SettingsStore()
@@ -39,6 +61,7 @@ final class SettingsStore: ObservableObject {
         static let customCategories = "settings.customCategories"
         static let systemCategoryOverrides = "settings.systemCategoryOverrides"
         static let systemCategoryOrder = "settings.systemCategoryOrder"
+        static let categoryBarPosition = "settings.categoryBarPosition"
     }
 
     @Published var iconSize: Double {
@@ -120,6 +143,12 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    @Published var categoryBarPosition: CategoryBarPosition {
+        didSet {
+            defaults.set(categoryBarPosition.rawValue, forKey: Key.categoryBarPosition)
+        }
+    }
+
     @Published var launchAtLogin: Bool {
         didSet {
             if launchAtLogin {
@@ -150,6 +179,8 @@ final class SettingsStore: ObservableObject {
         self.customCategories = Self.loadCustomCategories(from: defaults)
         self.systemCategoryOverrides = Self.loadSystemCategoryOverrides(from: defaults)
         self.systemCategoryOrder = Self.loadSystemCategoryOrder(from: defaults)
+        let storedCategoryBarPosition = defaults.string(forKey: Key.categoryBarPosition) ?? CategoryBarPosition.left.rawValue
+        self.categoryBarPosition = CategoryBarPosition(rawValue: storedCategoryBarPosition) ?? .left
         self.launchAtLogin = SMAppService.mainApp.status == .enabled
         reloadBackgroundImage()
 
@@ -171,6 +202,7 @@ final class SettingsStore: ObservableObject {
         customCategories = []
         systemCategoryOverrides = [:]
         systemCategoryOrder = Self.defaultSystemCategoryOrderRawValues()
+        categoryBarPosition = .left
     }
 
     var orderedSystemCategories: [AppCategory] {

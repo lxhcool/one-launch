@@ -91,10 +91,11 @@ struct LauncherView: View {
 
                 topTrailingActions(geometry: geometry)
 
-                if shouldShowLeftCategoryBar {
-                    leftCategoryBar(maxHeight: geometry.size.height - 64)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                        .padding(.leading, 0)
+                if shouldShowCategoryBar {
+                    categoryBar(
+                        maxHeight: geometry.size.height - 64,
+                        maxWidth: geometry.size.width
+                    )
                         .zIndex(20)
                 }
 
@@ -417,17 +418,37 @@ struct LauncherView: View {
         }
     }
 
-    private func leftCategoryBar(maxHeight: CGFloat) -> some View {
+    @ViewBuilder
+    private func categoryBar(maxHeight: CGFloat, maxWidth: CGFloat) -> some View {
+        switch settingsStore.categoryBarPosition {
+        case .left:
+            sideCategoryBar(maxHeight: maxHeight, position: .left)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .padding(.leading, 0)
+        case .right:
+            sideCategoryBar(maxHeight: maxHeight, position: .right)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                .padding(.trailing, 0)
+        case .bottom:
+            bottomCategoryBar(maxWidth: maxWidth)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .padding(.bottom, 24)
+                .ignoresSafeArea(edges: .bottom)
+        }
+    }
+
+    private func sideCategoryBar(maxHeight: CGFloat, position: CategoryBarPosition) -> some View {
         let categories = viewModel.categorySidebarItems
 
         return ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: position == .right ? .trailing : .leading, spacing: 8) {
                 ForEach(Array(categories.enumerated()), id: \.element.id) { index, category in
                     CategorySidebarItemView(
                         icon: category.icon,
                         title: category.title,
                         isSelected: viewModel.selectedCategory == category.selection,
-                        extraTrailingPadding: ladderTrailingPadding(for: index),
+                        placement: position == .right ? .right : .left,
+                        extraOffset: ladderTrailingPadding(for: index),
                         action: {
                             pageOffset = 0
                             viewModel.selectedCategory = category.selection
@@ -438,15 +459,45 @@ struct LauncherView: View {
                     }
                 }
             }
-            .padding(.leading, 0)
-            .padding(.trailing, 8)
+            .padding(.leading, position == .right ? 8 : 0)
+            .padding(.trailing, position == .right ? 0 : 8)
             .padding(.vertical, 10)
         }
         .frame(maxHeight: max(220, min(CGFloat(categories.count) * 44 + 32, maxHeight)))
         .fixedSize(horizontal: true, vertical: false)
     }
 
-    private var shouldShowLeftCategoryBar: Bool {
+    private func bottomCategoryBar(maxWidth: CGFloat) -> some View {
+        let categories = viewModel.categorySidebarItems
+        let barWidth = min(contentMaxWidth, maxWidth - 24)
+
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(categories) { category in
+                    CategorySidebarItemView(
+                        icon: category.icon,
+                        title: category.title,
+                        isSelected: viewModel.selectedCategory == category.selection,
+                        placement: .bottom,
+                        extraOffset: 0,
+                        action: {
+                            pageOffset = 0
+                            viewModel.selectedCategory = category.selection
+                        }
+                    )
+                    .contextMenu {
+                        categoryQuickActions(for: category)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .frame(minWidth: barWidth, alignment: .center)
+        }
+        .frame(width: barWidth)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var shouldShowCategoryBar: Bool {
         viewModel.presentedFolder == nil
     }
 
@@ -1373,59 +1424,129 @@ struct LauncherView: View {
     }
 }
 
+private enum CategorySidebarPlacement {
+    case left
+    case right
+    case bottom
+}
+
 private struct CategorySidebarItemView: View {
     let icon: String
     let title: String
     let isSelected: Bool
-    let extraTrailingPadding: CGFloat
+    let placement: CategorySidebarPlacement
+    let extraOffset: CGFloat
     let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: 16)
+            if placement == .bottom {
+                VStack(spacing: 6) {
+                    Image(systemName: icon)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.9))
+                        .frame(width: 42, height: 42)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(isSelected ? Color.accentColor.opacity(0.85) : Color.white.opacity(0.06))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(isSelected ? Color.accentColor.opacity(0.55) : Color.white.opacity(0.08), lineWidth: 1)
+                        )
 
-                Text(title)
-                    .font(.system(size: 12.5, weight: .medium))
-                    .lineLimit(1)
+                    Text(title)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.9))
+                        .lineLimit(1)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(width: 54)
+                .animation(.easeOut(duration: 0.14), value: isHovered)
+            } else {
+                HStack(spacing: 8) {
+                    Image(systemName: icon)
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(width: 16)
+
+                    Text(title)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.9))
+                .padding(.leading, leadingPadding)
+                .padding(.trailing, trailingPadding)
+                .padding(.vertical, 8)
+                .background(
+                    UnevenRoundedRectangle(
+                        cornerRadii: cornerRadii,
+                        style: .continuous
+                    )
+                        .fill(isSelected ? Color.accentColor.opacity(0.85) : Color.white.opacity(0.06))
+                )
+                .overlay(
+                    UnevenRoundedRectangle(
+                        cornerRadii: cornerRadii,
+                        style: .continuous
+                    )
+                        .stroke(isSelected ? Color.accentColor.opacity(0.55) : Color.white.opacity(0.08), lineWidth: 1)
+                )
+                .animation(.easeOut(duration: 0.14), value: isHovered)
+                .fixedSize(horizontal: true, vertical: false)
             }
-            .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.9))
-            .padding(.leading, 8)
-            .padding(.trailing, 12 + extraTrailingPadding + (isHovered ? 6 : 0))
-            .padding(.vertical, 8)
-            .background(
-                UnevenRoundedRectangle(
-                    cornerRadii: RectangleCornerRadii(
-                        topLeading: 0,
-                        bottomLeading: 0,
-                        bottomTrailing: 11,
-                        topTrailing: 11
-                    ),
-                    style: .continuous
-                )
-                    .fill(isSelected ? Color.accentColor.opacity(0.85) : Color.white.opacity(0.06))
-            )
-            .overlay(
-                UnevenRoundedRectangle(
-                    cornerRadii: RectangleCornerRadii(
-                        topLeading: 0,
-                        bottomLeading: 0,
-                        bottomTrailing: 11,
-                        topTrailing: 11
-                    ),
-                    style: .continuous
-                )
-                    .stroke(isSelected ? Color.accentColor.opacity(0.55) : Color.white.opacity(0.08), lineWidth: 1)
-            )
-            .animation(.easeOut(duration: 0.14), value: isHovered)
-            .fixedSize(horizontal: true, vertical: false)
         }
         .buttonStyle(.plain)
         .onHover { hovering in
             isHovered = hovering
+        }
+    }
+
+    private var leadingPadding: CGFloat {
+        switch placement {
+        case .left:
+            return 8
+        case .right:
+            return 12 + extraOffset + (isHovered ? 6 : 0)
+        case .bottom:
+            return 10 + (isHovered ? 4 : 0)
+        }
+    }
+
+    private var trailingPadding: CGFloat {
+        switch placement {
+        case .left:
+            return 12 + extraOffset + (isHovered ? 6 : 0)
+        case .right:
+            return 0
+        case .bottom:
+            return 10 + (isHovered ? 4 : 0)
+        }
+    }
+
+    private var cornerRadii: RectangleCornerRadii {
+        switch placement {
+        case .left:
+            return RectangleCornerRadii(
+                topLeading: 0,
+                bottomLeading: 0,
+                bottomTrailing: 11,
+                topTrailing: 11
+            )
+        case .right:
+            return RectangleCornerRadii(
+                topLeading: 11,
+                bottomLeading: 11,
+                bottomTrailing: 0,
+                topTrailing: 0
+            )
+        case .bottom:
+            return RectangleCornerRadii(
+                topLeading: 11,
+                bottomLeading: 0,
+                bottomTrailing: 0,
+                topTrailing: 11
+            )
         }
     }
 }

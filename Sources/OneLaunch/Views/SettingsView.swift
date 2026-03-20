@@ -240,6 +240,10 @@ struct SettingsView: View {
     private var categorySection: some View {
         SettingsCard(title: "分类", icon: "folder.badge.plus") {
             VStack(alignment: .leading, spacing: 16) {
+                categoryPositionArea
+
+                Divider().overlay(Color.white.opacity(0.06))
+
                 // 新增分类区域
                 addCategoryArea
 
@@ -252,6 +256,58 @@ struct SettingsView: View {
                 } else {
                     Divider().overlay(Color.white.opacity(0.06))
                     categoryList
+                }
+            }
+        }
+    }
+
+    private var categoryPositionArea: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "rectangle.split.3x1")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+
+                Text("分类栏位置")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+
+                Spacer()
+            }
+
+            HStack(spacing: 8) {
+                ForEach(CategoryBarPosition.allCases, id: \.rawValue) { position in
+                    Button {
+                        settingsStore.categoryBarPosition = position
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: position.icon)
+                                .font(.system(size: 11, weight: .semibold))
+                            Text(position.displayName)
+                                .font(.system(size: 11.5, weight: .semibold))
+                        }
+                        .foregroundStyle(settingsStore.categoryBarPosition == position ? Color.white : Color.primary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 7)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(
+                                    settingsStore.categoryBarPosition == position
+                                        ? Color.accentColor.opacity(0.85)
+                                        : Color.white.opacity(0.06)
+                                )
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(
+                                    settingsStore.categoryBarPosition == position
+                                        ? Color.accentColor.opacity(0.45)
+                                        : Color.white.opacity(0.09),
+                                    lineWidth: 1
+                                )
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
