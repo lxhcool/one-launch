@@ -9,8 +9,7 @@ enum SearchScorer {
         }
 
         let candidates = [
-            normalize(app.name),
-            normalize(app.bundleIdentifier ?? "")
+            normalize(app.name)
         ].filter { !$0.isEmpty }
 
         var bestScore: Int?

@@ -77,7 +77,7 @@ struct LauncherView: View {
                         }
                     }
 
-                VStack(spacing: 28) {
+                VStack(spacing: 68) {
                     header
 
                     content
@@ -90,6 +90,13 @@ struct LauncherView: View {
                 topLeadingMeta(geometry: geometry)
 
                 topTrailingActions(geometry: geometry)
+
+                if shouldShowLeftCategoryBar {
+                    leftCategoryBar(maxHeight: geometry.size.height - 64)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                        .padding(.leading, 0)
+                        .zIndex(20)
+                }
 
                 // 搜索面板 - 悬浮在最上层，不影响网格布局
                 if viewModel.isSearching && !viewModel.searchResults.isEmpty {
@@ -147,6 +154,12 @@ struct LauncherView: View {
         }
         .onChange(of: viewModel.isPresented) { _, isPresented in
             updateAdjacentPageRendering(for: isPresented)
+        }
+        .onChange(of: viewModel.selectedCategory) { _, _ in
+            pageOffset = 0
+            if viewModel.isPresented {
+                updateAdjacentPageRendering(for: true)
+            }
         }
         .onExitCommand {
             if viewModel.showSettings {
@@ -286,7 +299,7 @@ struct LauncherView: View {
 
     @ViewBuilder
     private var content: some View {
-        if viewModel.filteredApps.isEmpty {
+        if viewModel.gridApps.isEmpty {
             ContentUnavailableView(
                 "没有找到应用",
                 systemImage: "magnifyingglass",
@@ -294,105 +307,148 @@ struct LauncherView: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            GeometryReader { geo in
-                VStack(spacing: 0) {
-                    HStack(spacing: 0) {
-                        ForEach(0..<viewModel.totalPages, id: \.self) { page in
-                            if abs(page - viewModel.currentPage) <= renderedPageDistance {
-                                VStack(spacing: 0) {
-                                    LazyVGrid(columns: columns, spacing: 18) {
-                                        ForEach(viewModel.gridItemsForPage(page)) { item in
-                                            switch item {
-                                            case let .app(app):
-                                                appGridItem(for: app)
-                                            case let .folder(folder):
-                                                folderGridItem(for: folder)
-                                            }
-                                        }
-                                    }
-                                    .padding(.top, 24)
-                                    .padding(.horizontal, 24)
-                                    .padding(.bottom, 10)
-
-                                    Color.clear
-                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                        .contentShape(Rectangle())
-                                        .onTapGesture {
-                                            if viewModel.showSettings {
-                                                dismissSettings()
-                                            } else if viewModel.presentedFolder != nil {
-                                                viewModel.closeFolder()
-                                            } else {
-                                                onClose()
-                                            }
-                                        }
-                                }
-                                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
-                                .allowsHitTesting(page == viewModel.currentPage)
-                            } else {
-                                Color.clear
-                                    .frame(width: geo.size.width, height: geo.size.height)
-                            }
-                        }
-                    }
-                    .offset(x: -CGFloat(viewModel.currentPage) * geo.size.width + pageOffset)
-                    .frame(width: geo.size.width, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .clipped()
-                    .overlay(alignment: .bottom) {
-                        if !viewModel.isSearching && viewModel.totalPages > 1 {
-                            pageIndicator
-                                .padding(.bottom, 18)
-                        }
-                    }
-                    .gesture(
-                        DragGesture(minimumDistance: 6, coordinateSpace: .local)
-                            .onChanged { value in
-                                guard canHandlePageSwipe else { return }
-                                guard viewModel.totalPages > 1 else { return }
-
-                                let horizontal = abs(value.translation.width)
-                                let vertical = abs(value.translation.height)
-                                guard horizontal > max(6, vertical * 0.8) else { return }
-
-                                pageOffset = adjustedPageOffset(for: value.translation.width)
-                            }
-                            .onEnded { value in
-                                guard canHandlePageSwipe else { return }
-                                guard viewModel.totalPages > 1 else { return }
-
-                                let current = adjustedPageOffset(for: value.translation.width)
-                                let predicted = adjustedPageOffset(for: value.predictedEndTranslation.width)
-                                let effective: CGFloat
-                                if abs(predicted) > abs(current) {
-                                    effective = predicted
-                                } else {
-                                    effective = current
-                                }
-                                let threshold = pageSwipeThreshold(for: geo.size.width)
-
-                                var targetPage = viewModel.currentPage
-                                if effective < -threshold {
-                                    targetPage = min(viewModel.totalPages - 1, viewModel.currentPage + 1)
-                                } else if effective > threshold {
-                                    targetPage = max(0, viewModel.currentPage - 1)
-                                }
-
-                                withAnimation(pageTransitionAnimation) {
-                                    viewModel.currentPage = targetPage
-                                    pageOffset = 0
-                                }
-                            }
+            GeometryReader { gridGeo in
+                if !viewModel.isSearching && viewModel.gridItems.isEmpty {
+                    ContentUnavailableView(
+                        "该分类暂无应用",
+                        systemImage: "square.grid.2x2",
+                        description: Text("试试切换到其他分类，或重新扫描应用列表")
                     )
-                    .onChange(of: viewModel.totalPages) { _, totalPages in
-                        let maxPage = max(0, totalPages - 1)
-                        if viewModel.currentPage > maxPage {
-                            viewModel.currentPage = maxPage
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    VStack(spacing: 0) {
+                        HStack(spacing: 0) {
+                            ForEach(0..<viewModel.totalPages, id: \.self) { page in
+                                if abs(page - viewModel.currentPage) <= renderedPageDistance {
+                                    VStack(spacing: 0) {
+                                        LazyVGrid(columns: columns, spacing: 18) {
+                                            ForEach(viewModel.gridItemsForPage(page)) { item in
+                                                switch item {
+                                                case let .app(app):
+                                                    appGridItem(for: app)
+                                                case let .folder(folder):
+                                                    folderGridItem(for: folder)
+                                                }
+                                            }
+                                        }
+                                        .padding(.top, 24)
+                                        .padding(.horizontal, 24)
+                                        .padding(.bottom, 10)
+
+                                        Color.clear
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                            .contentShape(Rectangle())
+                                            .onTapGesture {
+                                                if viewModel.showSettings {
+                                                    dismissSettings()
+                                                } else if viewModel.presentedFolder != nil {
+                                                    viewModel.closeFolder()
+                                                } else {
+                                                    onClose()
+                                                }
+                                            }
+                                    }
+                                    .frame(width: gridGeo.size.width, height: gridGeo.size.height, alignment: .top)
+                                    .allowsHitTesting(page == viewModel.currentPage)
+                                } else {
+                                    Color.clear
+                                        .frame(width: gridGeo.size.width, height: gridGeo.size.height)
+                                }
+                            }
+                        }
+                        .offset(x: -CGFloat(viewModel.currentPage) * gridGeo.size.width + pageOffset)
+                        .frame(width: gridGeo.size.width, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .clipped()
+                        .overlay(alignment: .bottom) {
+                            if viewModel.totalPages > 1 {
+                                pageIndicator
+                                    .padding(.bottom, 18)
+                            }
+                        }
+                        .gesture(
+                            DragGesture(minimumDistance: 6, coordinateSpace: .local)
+                                .onChanged { value in
+                                    guard canHandlePageSwipe else { return }
+                                    guard viewModel.totalPages > 1 else { return }
+
+                                    let horizontal = abs(value.translation.width)
+                                    let vertical = abs(value.translation.height)
+                                    guard horizontal > max(6, vertical * 0.8) else { return }
+
+                                    pageOffset = adjustedPageOffset(for: value.translation.width)
+                                }
+                                .onEnded { value in
+                                    guard canHandlePageSwipe else { return }
+                                    guard viewModel.totalPages > 1 else { return }
+
+                                    let current = adjustedPageOffset(for: value.translation.width)
+                                    let predicted = adjustedPageOffset(for: value.predictedEndTranslation.width)
+                                    let effective: CGFloat
+                                    if abs(predicted) > abs(current) {
+                                        effective = predicted
+                                    } else {
+                                        effective = current
+                                    }
+                                    let threshold = pageSwipeThreshold(for: gridGeo.size.width)
+
+                                    var targetPage = viewModel.currentPage
+                                    if effective < -threshold {
+                                        targetPage = min(viewModel.totalPages - 1, viewModel.currentPage + 1)
+                                    } else if effective > threshold {
+                                        targetPage = max(0, viewModel.currentPage - 1)
+                                    }
+
+                                    withAnimation(pageTransitionAnimation) {
+                                        viewModel.currentPage = targetPage
+                                        pageOffset = 0
+                                    }
+                                }
+                        )
+                        .onChange(of: viewModel.totalPages) { _, totalPages in
+                            let maxPage = max(0, totalPages - 1)
+                            if viewModel.currentPage > maxPage {
+                                viewModel.currentPage = maxPage
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    private func leftCategoryBar(maxHeight: CGFloat) -> some View {
+        let categories = Array(AppCategory.allCases)
+
+        return ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(categories.enumerated()), id: \.element.id) { index, category in
+                    CategorySidebarItemView(
+                        category: category,
+                        isSelected: viewModel.selectedCategory == category,
+                        extraTrailingPadding: ladderTrailingPadding(for: index),
+                        action: {
+                            pageOffset = 0
+                            viewModel.selectedCategory = category
+                        }
+                    )
+                }
+            }
+            .padding(.leading, 0)
+            .padding(.trailing, 8)
+            .padding(.vertical, 10)
+        }
+        .frame(maxHeight: max(220, min(CGFloat(categories.count) * 44 + 32, maxHeight)))
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var shouldShowLeftCategoryBar: Bool {
+        viewModel.presentedFolder == nil
+    }
+
+    private func ladderTrailingPadding(for index: Int) -> CGFloat {
+        let pattern: [CGFloat] = [16, 4, 12, 0, 14, 6, 10, 2, 8, 0]
+        return pattern[index % pattern.count]
     }
 
     private var appGrid: some View {
@@ -1207,6 +1263,62 @@ struct LauncherView: View {
             Capsule()
                 .fill(Color.black.opacity(0.25))
         )
+    }
+}
+
+private struct CategorySidebarItemView: View {
+    let category: AppCategory
+    let isSelected: Bool
+    let extraTrailingPadding: CGFloat
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: category.icon)
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 16)
+
+                Text(category.rawValue)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.9))
+            .padding(.leading, 8)
+            .padding(.trailing, 12 + extraTrailingPadding + (isHovered ? 6 : 0))
+            .padding(.vertical, 8)
+            .background(
+                UnevenRoundedRectangle(
+                    cornerRadii: RectangleCornerRadii(
+                        topLeading: 0,
+                        bottomLeading: 0,
+                        bottomTrailing: 11,
+                        topTrailing: 11
+                    ),
+                    style: .continuous
+                )
+                    .fill(isSelected ? Color.accentColor.opacity(0.85) : Color.white.opacity(0.06))
+            )
+            .overlay(
+                UnevenRoundedRectangle(
+                    cornerRadii: RectangleCornerRadii(
+                        topLeading: 0,
+                        bottomLeading: 0,
+                        bottomTrailing: 11,
+                        topTrailing: 11
+                    ),
+                    style: .continuous
+                )
+                    .stroke(isSelected ? Color.accentColor.opacity(0.55) : Color.white.opacity(0.08), lineWidth: 1)
+            )
+            .animation(.easeOut(duration: 0.14), value: isHovered)
+            .fixedSize(horizontal: true, vertical: false)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+        }
     }
 }
 

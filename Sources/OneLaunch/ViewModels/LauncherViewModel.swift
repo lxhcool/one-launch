@@ -39,7 +39,6 @@ final class LauncherViewModel: ObservableObject {
         didSet {
             if query != oldValue {
                 activeFolderID = nil
-                currentPage = 0
                 searchSelectedIndex = 0
             }
             updateFilteredAppsCache()
@@ -54,14 +53,24 @@ final class LauncherViewModel: ObservableObject {
     @Published private(set) var isRefreshing = false
     @Published var shouldFocusSearchField = false
     @Published var showSettings = false
+    @Published var selectedCategory: AppCategory = .all {
+        didSet {
+            guard selectedCategory != oldValue else { return }
+            currentPage = 0
+            activeFolderID = nil
+            rebuildGridCaches()
+        }
+    }
     @Published private(set) var filteredAppsCache: [AppItem] = []
     @Published private(set) var gridAppsCache: [AppItem] = []
+    @Published private(set) var folderDisplaysCache: [FolderDisplay] = []
+    @Published private(set) var gridItemsCache: [LauncherGridItem] = []
     @Published var activeFolderID: String?
     @Published var currentPage = 0
     @Published var searchSelectedIndex: Int = 0
 
     let settingsStore: SettingsStore
-    let itemsPerPage = 36
+    let itemsPerPage = 45
     let maxSearchResults = 8
     private let recentAppsStore = RecentAppsStore()
     private var cancellables = Set<AnyCancellable>()
@@ -81,6 +90,14 @@ final class LauncherViewModel: ObservableObject {
             self?.updateFilteredAppsCache()
         }
         .store(in: &cancellables)
+
+        resolvedSettingsStore.$appFolders
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.rebuildGridCaches()
+            }
+            .store(in: &cancellables)
     }
 
     var filteredApps: [AppItem] {
@@ -108,34 +125,17 @@ final class LauncherViewModel: ObservableObject {
         gridAppsCache
     }
 
+    var filteredGridApps: [AppItem] {
+        guard selectedCategory != .all else { return gridApps }
+        return gridApps.filter { $0.category == selectedCategory }
+    }
+
     var folderDisplays: [FolderDisplay] {
-        resolveFolders(for: gridApps)
+        folderDisplaysCache
     }
 
     var gridItems: [LauncherGridItem] {
-        let apps = gridApps
-
-        let folderMap = Dictionary(
-            folderDisplays.flatMap { display in
-                display.apps.map { ($0.id, display) }
-            },
-            uniquingKeysWith: { existing, _ in existing }
-        )
-
-        var seenFolders = Set<String>()
-        var result: [LauncherGridItem] = []
-
-        for app in apps {
-            if let folder = folderMap[app.id] {
-                if seenFolders.insert(folder.id).inserted {
-                    result.append(.folder(folder))
-                }
-            } else {
-                result.append(.app(app))
-            }
-        }
-
-        return result
+        gridItemsCache
     }
 
     var totalPages: Int {
@@ -187,6 +187,7 @@ final class LauncherViewModel: ObservableObject {
         if shouldPrimeVisibleApps {
             filteredAppsCache = appsCopy
             gridAppsCache = appsCopy
+            rebuildGridCaches()
         }
 
         // 搜索时使用防抖，减少频繁计算
@@ -221,7 +222,45 @@ final class LauncherViewModel: ObservableObject {
                 guard self.apps == appsCopy && self.query == queryCopy else { return }
                 self.filteredAppsCache = result.filtered
                 self.gridAppsCache = result.grid
+                self.rebuildGridCaches()
             }
+        }
+    }
+
+    private func rebuildGridCaches() {
+        let apps = filteredGridApps
+        let displays = resolveFolders(for: apps)
+
+        let folderMap = Dictionary(
+            displays.flatMap { display in
+                display.apps.map { ($0.id, display) }
+            },
+            uniquingKeysWith: { existing, _ in existing }
+        )
+
+        var seenFolders = Set<String>()
+        var items: [LauncherGridItem] = []
+
+        for app in apps {
+            if let folder = folderMap[app.id] {
+                if seenFolders.insert(folder.id).inserted {
+                    items.append(.folder(folder))
+                }
+            } else {
+                items.append(.app(app))
+            }
+        }
+
+        folderDisplaysCache = displays
+        gridItemsCache = items
+
+        let maxPage = max(0, totalPages - 1)
+        if currentPage > maxPage {
+            currentPage = maxPage
+        }
+
+        if let activeFolderID, !displays.contains(where: { $0.id == activeFolderID }) {
+            self.activeFolderID = nil
         }
     }
 
@@ -581,6 +620,7 @@ final class LauncherViewModel: ObservableObject {
         }
         filteredAppsCache = sorted
         gridAppsCache = sorted
+        rebuildGridCaches()
     }
 
     func resolveFolders(for visibleApps: [AppItem]) -> [FolderDisplay] {
