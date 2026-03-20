@@ -418,20 +418,24 @@ struct LauncherView: View {
     }
 
     private func leftCategoryBar(maxHeight: CGFloat) -> some View {
-        let categories = Array(AppCategory.allCases)
+        let categories = viewModel.categorySidebarItems
 
         return ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(categories.enumerated()), id: \.element.id) { index, category in
                     CategorySidebarItemView(
-                        category: category,
-                        isSelected: viewModel.selectedCategory == category,
+                        icon: category.icon,
+                        title: category.title,
+                        isSelected: viewModel.selectedCategory == category.selection,
                         extraTrailingPadding: ladderTrailingPadding(for: index),
                         action: {
                             pageOffset = 0
-                            viewModel.selectedCategory = category
+                            viewModel.selectedCategory = category.selection
                         }
                     )
+                    .contextMenu {
+                        categoryQuickActions(for: category)
+                    }
                 }
             }
             .padding(.leading, 0)
@@ -449,6 +453,23 @@ struct LauncherView: View {
     private func ladderTrailingPadding(for index: Int) -> CGFloat {
         let pattern: [CGFloat] = [16, 4, 12, 0, 14, 6, 10, 2, 8, 0]
         return pattern[index % pattern.count]
+    }
+
+    @ViewBuilder
+    private func categoryQuickActions(for category: CategorySidebarItem) -> some View {
+        Button {
+            viewModel.moveCategoryUp(category.selection)
+        } label: {
+            Label("上移", systemImage: "chevron.up")
+        }
+        .disabled(!viewModel.canMoveCategoryUp(category.selection))
+
+        Button {
+            viewModel.moveCategoryDown(category.selection)
+        } label: {
+            Label("下移", systemImage: "chevron.down")
+        }
+        .disabled(!viewModel.canMoveCategoryDown(category.selection))
     }
 
     private var appGrid: some View {
@@ -556,6 +577,10 @@ struct LauncherView: View {
         return AppCardView(app: app, iconSize: effectiveIconSize) {
             onClose()
             viewModel.launch(app)
+        }
+        .simultaneousGesture(dragGesture(for: app.id))
+        .contextMenu {
+            customCategoryContextMenu(for: app)
         }
     }
 
@@ -825,6 +850,88 @@ struct LauncherView: View {
             viewModel.launch(app)
         }
         .help("点击打开应用")
+        .simultaneousGesture(folderAppDragGesture(appID: app.id, folderID: folder.id))
+        .contextMenu {
+            customCategoryContextMenu(for: app)
+        }
+    }
+
+    @ViewBuilder
+    private func customCategoryContextMenu(for app: AppItem) -> some View {
+        let customCategories = settingsStore.customCategories
+        let effectiveSystemCategory = viewModel.effectiveSystemCategory(for: app)
+        let hasSystemOverride = viewModel.hasSystemCategoryOverride(for: app.id)
+
+        Menu {
+            ForEach(viewModel.editableSystemCategories, id: \.rawValue) { category in
+                Button {
+                    viewModel.setSystemCategory(for: app, to: category)
+                } label: {
+                    HStack {
+                        Text(category.rawValue)
+                        Spacer()
+                        if effectiveSystemCategory == category {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.accentColor)
+                        }
+                    }
+                }
+            }
+
+            if hasSystemOverride {
+                Divider()
+                Button("恢复自动分类") {
+                    viewModel.restoreAutoSystemCategory(for: app.id)
+                }
+            }
+        } label: {
+            Label("系统分类", systemImage: "square.grid.2x2")
+        }
+
+        Divider()
+
+        if customCategories.isEmpty {
+            Button {
+                viewModel.showSettings = true
+            } label: {
+                Label("新建自定义分类", systemImage: "plus")
+            }
+        } else {
+            let assignedCategories = customCategories.filter { category in
+                viewModel.isApp(app.id, inCustomCategory: category.id)
+            }
+
+            Menu {
+                ForEach(customCategories, id: \.id) { category in
+                    Button {
+                        viewModel.toggleCustomCategoryMembership(appID: app.id, categoryID: category.id)
+                    } label: {
+                        HStack {
+                            Text(category.name)
+                            Spacer()
+                            if viewModel.isApp(app.id, inCustomCategory: category.id) {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                        }
+                    }
+                }
+
+                if !assignedCategories.isEmpty {
+                    Divider()
+
+                    Button(role: .destructive) {
+                        viewModel.removeAppFromAllCustomCategories(app.id)
+                    } label: {
+                        Label("清除全部分类", systemImage: "xmark.circle")
+                    }
+                }
+            } label: {
+                Label("自定义分类", systemImage: "tag")
+            }
+        }
     }
 
     private func folderAppDragGesture(appID: String, folderID: String) -> some Gesture {
@@ -1267,7 +1374,8 @@ struct LauncherView: View {
 }
 
 private struct CategorySidebarItemView: View {
-    let category: AppCategory
+    let icon: String
+    let title: String
     let isSelected: Bool
     let extraTrailingPadding: CGFloat
     let action: () -> Void
@@ -1276,11 +1384,11 @@ private struct CategorySidebarItemView: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                Image(systemName: category.icon)
+                Image(systemName: icon)
                     .font(.system(size: 13, weight: .medium))
                     .frame(width: 16)
 
-                Text(category.rawValue)
+                Text(title)
                     .font(.system(size: 12.5, weight: .medium))
                     .lineLimit(1)
             }

@@ -36,6 +36,9 @@ final class SettingsStore: ObservableObject {
         static let backgroundBlurRadius = "settings.backgroundBlurRadius"
         static let manualAppOrder = "settings.manualAppOrder"
         static let appFolders = "settings.appFolders"
+        static let customCategories = "settings.customCategories"
+        static let systemCategoryOverrides = "settings.systemCategoryOverrides"
+        static let systemCategoryOrder = "settings.systemCategoryOrder"
     }
 
     @Published var iconSize: Double {
@@ -84,6 +87,39 @@ final class SettingsStore: ObservableObject {
         didSet { saveFolders(appFolders) }
     }
 
+    @Published var customCategories: [CustomCategory] {
+        didSet {
+            let normalized = Self.normalizeCustomCategories(customCategories)
+            if normalized != customCategories {
+                customCategories = normalized
+                return
+            }
+            saveCustomCategories(customCategories)
+        }
+    }
+
+    @Published var systemCategoryOverrides: [String: AppCategory] {
+        didSet {
+            let normalized = Self.normalizeSystemCategoryOverrides(systemCategoryOverrides)
+            if normalized != systemCategoryOverrides {
+                systemCategoryOverrides = normalized
+                return
+            }
+            saveSystemCategoryOverrides(systemCategoryOverrides)
+        }
+    }
+
+    @Published var systemCategoryOrder: [String] {
+        didSet {
+            let normalized = Self.normalizeSystemCategoryOrder(systemCategoryOrder)
+            if normalized != systemCategoryOrder {
+                systemCategoryOrder = normalized
+                return
+            }
+            saveSystemCategoryOrder(systemCategoryOrder)
+        }
+    }
+
     @Published var launchAtLogin: Bool {
         didSet {
             if launchAtLogin {
@@ -111,6 +147,9 @@ final class SettingsStore: ObservableObject {
         self.backgroundBlurRadius = storedBlurRadius > 0 ? min(36, max(0, storedBlurRadius)) : 18
         self.manualAppOrder = defaults.stringArray(forKey: Key.manualAppOrder) ?? []
         self.appFolders = Self.loadFolders(from: defaults)
+        self.customCategories = Self.loadCustomCategories(from: defaults)
+        self.systemCategoryOverrides = Self.loadSystemCategoryOverrides(from: defaults)
+        self.systemCategoryOrder = Self.loadSystemCategoryOrder(from: defaults)
         self.launchAtLogin = SMAppService.mainApp.status == .enabled
         reloadBackgroundImage()
 
@@ -129,6 +168,188 @@ final class SettingsStore: ObservableObject {
         clearBackgroundImage()
         manualAppOrder = []
         appFolders = []
+        customCategories = []
+        systemCategoryOverrides = [:]
+        systemCategoryOrder = Self.defaultSystemCategoryOrderRawValues()
+    }
+
+    var orderedSystemCategories: [AppCategory] {
+        let orderedRawValues = Self.normalizeSystemCategoryOrder(systemCategoryOrder)
+        var seen = Set<AppCategory>([.all])
+        var categories: [AppCategory] = [.all]
+
+        for rawValue in orderedRawValues {
+            guard let category = AppCategory(rawValue: rawValue), category != .all else { continue }
+            guard seen.insert(category).inserted else { continue }
+            categories.append(category)
+        }
+
+        for category in AppCategory.allCases where category != .all {
+            if seen.insert(category).inserted {
+                categories.append(category)
+            }
+        }
+
+        return categories
+    }
+
+    func addCustomCategory(named name: String) -> String? {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return nil }
+
+        let duplicated = customCategories.contains {
+            $0.name.compare(trimmedName, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        }
+        guard !duplicated else { return nil }
+
+        let category = CustomCategory(name: trimmedName)
+        customCategories.append(category)
+        return category.id
+    }
+
+    func renameCustomCategory(_ categoryID: String, to name: String) {
+        guard let index = customCategories.firstIndex(where: { $0.id == categoryID }) else {
+            return
+        }
+
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+
+        let duplicated = customCategories.contains {
+            $0.id != categoryID && $0.name.compare(trimmedName, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        }
+        guard !duplicated else { return }
+
+        customCategories[index].name = trimmedName
+    }
+
+    func deleteCustomCategory(_ categoryID: String) {
+        customCategories.removeAll { $0.id == categoryID }
+    }
+
+    func moveCustomCategoryUp(_ categoryID: String) {
+        guard let index = customCategories.firstIndex(where: { $0.id == categoryID }), index > 0 else {
+            return
+        }
+
+        var categories = customCategories
+        let category = categories.remove(at: index)
+        categories.insert(category, at: index - 1)
+        customCategories = categories
+    }
+
+    func moveCustomCategoryDown(_ categoryID: String) {
+        guard let index = customCategories.firstIndex(where: { $0.id == categoryID }),
+              index < customCategories.count - 1 else {
+            return
+        }
+
+        var categories = customCategories
+        let category = categories.remove(at: index)
+        categories.insert(category, at: index + 1)
+        customCategories = categories
+    }
+
+    func moveSystemCategoryUp(_ category: AppCategory) {
+        guard category != .all else { return }
+
+        var categories = orderedSystemCategories.filter { $0 != .all }
+        guard let index = categories.firstIndex(of: category), index > 0 else {
+            return
+        }
+
+        let moved = categories.remove(at: index)
+        categories.insert(moved, at: index - 1)
+        systemCategoryOrder = categories.map(\.rawValue)
+    }
+
+    func moveSystemCategoryDown(_ category: AppCategory) {
+        guard category != .all else { return }
+
+        var categories = orderedSystemCategories.filter { $0 != .all }
+        guard let index = categories.firstIndex(of: category), index < categories.count - 1 else {
+            return
+        }
+
+        let moved = categories.remove(at: index)
+        categories.insert(moved, at: index + 1)
+        systemCategoryOrder = categories.map(\.rawValue)
+    }
+
+    func isApp(_ appID: String, inCustomCategory categoryID: String) -> Bool {
+        customCategories.first(where: { $0.id == categoryID })?.appIDs.contains(appID) == true
+    }
+
+    func assignApp(_ appID: String, toCustomCategory categoryID: String) {
+        guard let targetIndex = customCategories.firstIndex(where: { $0.id == categoryID }) else {
+            return
+        }
+
+        var categories = customCategories
+        var didChange = false
+
+        for index in categories.indices {
+            let oldCount = categories[index].appIDs.count
+            categories[index].appIDs.removeAll { $0 == appID }
+            if categories[index].appIDs.count != oldCount {
+                didChange = true
+            }
+        }
+
+        if !categories[targetIndex].appIDs.contains(appID) {
+            categories[targetIndex].appIDs.append(appID)
+            didChange = true
+        }
+
+        if didChange {
+            customCategories = categories
+        }
+    }
+
+    func removeApp(_ appID: String, fromCustomCategory categoryID: String) {
+        guard let index = customCategories.firstIndex(where: { $0.id == categoryID }) else {
+            return
+        }
+        customCategories[index].appIDs.removeAll { $0 == appID }
+    }
+
+    func removeAppFromAllCustomCategories(_ appID: String) {
+        var categories = customCategories
+        var didChange = false
+
+        for index in categories.indices {
+            let oldCount = categories[index].appIDs.count
+            categories[index].appIDs.removeAll { $0 == appID }
+            if categories[index].appIDs.count != oldCount {
+                didChange = true
+            }
+        }
+
+        if didChange {
+            customCategories = categories
+        }
+    }
+
+    func systemCategoryOverride(for appID: String) -> AppCategory? {
+        systemCategoryOverrides[appID]
+    }
+
+    func effectiveCategory(for app: AppItem) -> AppCategory {
+        systemCategoryOverrides[app.id] ?? app.category
+    }
+
+    func setSystemCategoryOverride(appID: String, category: AppCategory?) {
+        guard !appID.isEmpty else { return }
+
+        if let category, category != .all {
+            systemCategoryOverrides[appID] = category
+        } else {
+            systemCategoryOverrides.removeValue(forKey: appID)
+        }
+    }
+
+    func clearSystemCategoryOverride(appID: String) {
+        systemCategoryOverrides.removeValue(forKey: appID)
     }
 
     func setBackgroundImage(from sourceURL: URL) {
@@ -410,5 +631,109 @@ final class SettingsStore: ObservableObject {
         if let data = try? JSONEncoder().encode(folders) {
             defaults.set(data, forKey: Key.appFolders)
         }
+    }
+
+    private static func loadCustomCategories(from defaults: UserDefaults) -> [CustomCategory] {
+        guard let data = defaults.data(forKey: Key.customCategories) else { return [] }
+        let categories = (try? JSONDecoder().decode([CustomCategory].self, from: data)) ?? []
+        return normalizeCustomCategories(categories)
+    }
+
+    private func saveCustomCategories(_ categories: [CustomCategory]) {
+        if categories.isEmpty {
+            defaults.removeObject(forKey: Key.customCategories)
+            return
+        }
+
+        if let data = try? JSONEncoder().encode(categories) {
+            defaults.set(data, forKey: Key.customCategories)
+        }
+    }
+
+    private static func loadSystemCategoryOverrides(from defaults: UserDefaults) -> [String: AppCategory] {
+        guard let data = defaults.data(forKey: Key.systemCategoryOverrides) else { return [:] }
+        guard let raw = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
+
+        var result: [String: AppCategory] = [:]
+        for (appID, rawValue) in raw {
+            guard let category = AppCategory(rawValue: rawValue), category != .all else {
+                continue
+            }
+            result[appID] = category
+        }
+
+        return normalizeSystemCategoryOverrides(result)
+    }
+
+    private func saveSystemCategoryOverrides(_ overrides: [String: AppCategory]) {
+        if overrides.isEmpty {
+            defaults.removeObject(forKey: Key.systemCategoryOverrides)
+            return
+        }
+
+        let raw = Dictionary(overrides.map { ($0.key, $0.value.rawValue) }, uniquingKeysWith: { _, latest in latest })
+        if let data = try? JSONEncoder().encode(raw) {
+            defaults.set(data, forKey: Key.systemCategoryOverrides)
+        }
+    }
+
+    private static func loadSystemCategoryOrder(from defaults: UserDefaults) -> [String] {
+        let stored = defaults.stringArray(forKey: Key.systemCategoryOrder) ?? []
+        if stored.isEmpty {
+            return defaultSystemCategoryOrderRawValues()
+        }
+        return normalizeSystemCategoryOrder(stored)
+    }
+
+    private func saveSystemCategoryOrder(_ order: [String]) {
+        let normalized = Self.normalizeSystemCategoryOrder(order)
+        if normalized.isEmpty {
+            defaults.removeObject(forKey: Key.systemCategoryOrder)
+        } else {
+            defaults.set(normalized, forKey: Key.systemCategoryOrder)
+        }
+    }
+
+    private static func normalizeCustomCategories(_ categories: [CustomCategory]) -> [CustomCategory] {
+        var seenIDs = Set<String>()
+        var seenAppIDsAcrossCategories = Set<String>()
+
+        return categories.compactMap { category in
+            let trimmedName = category.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedName.isEmpty else { return nil }
+            guard seenIDs.insert(category.id).inserted else { return nil }
+
+            var seenAppIDsInCategory = Set<String>()
+            let dedupedAppIDs = category.appIDs.filter { appID in
+                guard seenAppIDsInCategory.insert(appID).inserted else { return false }
+                guard seenAppIDsAcrossCategories.insert(appID).inserted else { return false }
+                return true
+            }
+            return CustomCategory(id: category.id, name: trimmedName, appIDs: dedupedAppIDs)
+        }
+    }
+
+    private static func normalizeSystemCategoryOverrides(_ overrides: [String: AppCategory]) -> [String: AppCategory] {
+        overrides.reduce(into: [:]) { partialResult, pair in
+            let appID = pair.key.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !appID.isEmpty else { return }
+            guard pair.value != .all else { return }
+            partialResult[appID] = pair.value
+        }
+    }
+
+    private static func normalizeSystemCategoryOrder(_ order: [String]) -> [String] {
+        var seen = Set<String>()
+        let validRawValues = Set(AppCategory.allCases.filter { $0 != .all }.map(\.rawValue))
+
+        return order.compactMap { rawValue in
+            guard validRawValues.contains(rawValue) else { return nil }
+            guard seen.insert(rawValue).inserted else { return nil }
+            return rawValue
+        }
+    }
+
+    private static func defaultSystemCategoryOrderRawValues() -> [String] {
+        AppCategory.allCases.filter { $0 != .all }.map(\.rawValue)
     }
 }

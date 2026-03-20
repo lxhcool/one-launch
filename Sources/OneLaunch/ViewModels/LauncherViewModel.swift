@@ -16,6 +16,31 @@ struct FolderDisplay: Identifiable, Hashable {
     }
 }
 
+enum CategorySelection: Hashable, Identifiable {
+    case builtIn(AppCategory)
+    case custom(String)
+
+    var id: String {
+        switch self {
+        case let .builtIn(category):
+            return "builtin:\(category.rawValue)"
+        case let .custom(categoryID):
+            return "custom:\(categoryID)"
+        }
+    }
+}
+
+struct CategorySidebarItem: Identifiable, Hashable {
+    let selection: CategorySelection
+    let title: String
+    let icon: String
+    let isCustom: Bool
+
+    var id: String {
+        selection.id
+    }
+}
+
 enum LauncherGridItem: Identifiable, Hashable {
     case app(AppItem)
     case folder(FolderDisplay)
@@ -53,7 +78,7 @@ final class LauncherViewModel: ObservableObject {
     @Published private(set) var isRefreshing = false
     @Published var shouldFocusSearchField = false
     @Published var showSettings = false
-    @Published var selectedCategory: AppCategory = .all {
+    @Published var selectedCategory: CategorySelection = .builtIn(.all) {
         didSet {
             guard selectedCategory != oldValue else { return }
             currentPage = 0
@@ -98,6 +123,30 @@ final class LauncherViewModel: ObservableObject {
                 self?.rebuildGridCaches()
             }
             .store(in: &cancellables)
+
+        resolvedSettingsStore.$customCategories
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] categories in
+                guard let self else { return }
+
+                if case let .custom(categoryID) = self.selectedCategory,
+                   !categories.contains(where: { $0.id == categoryID }) {
+                    self.selectedCategory = .builtIn(.all)
+                    return
+                }
+
+                self.rebuildGridCaches()
+            }
+            .store(in: &cancellables)
+
+        resolvedSettingsStore.$systemCategoryOverrides
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.rebuildGridCaches()
+            }
+            .store(in: &cancellables)
     }
 
     var filteredApps: [AppItem] {
@@ -126,8 +175,53 @@ final class LauncherViewModel: ObservableObject {
     }
 
     var filteredGridApps: [AppItem] {
-        guard selectedCategory != .all else { return gridApps }
-        return gridApps.filter { $0.category == selectedCategory }
+        let appIDsInCustomCategories = Set(settingsStore.customCategories.flatMap(\.appIDs))
+
+        switch selectedCategory {
+        case .builtIn(.all):
+            return gridApps
+        case let .builtIn(category):
+            return gridApps.filter {
+                !appIDsInCustomCategories.contains($0.id)
+                    && effectiveSystemCategory(for: $0) == category
+            }
+        case let .custom(categoryID):
+            guard let category = settingsStore.customCategories.first(where: { $0.id == categoryID }) else {
+                return []
+            }
+            let appIDs = Set(category.appIDs)
+            return gridApps.filter { appIDs.contains($0.id) }
+        }
+    }
+
+    var editableSystemCategories: [AppCategory] {
+        AppCategory.allCases.filter { $0 != .all }
+    }
+
+    var orderedSystemCategories: [AppCategory] {
+        settingsStore.orderedSystemCategories
+    }
+
+    var categorySidebarItems: [CategorySidebarItem] {
+        let builtIn = settingsStore.orderedSystemCategories.map {
+            CategorySidebarItem(
+                selection: .builtIn($0),
+                title: $0.rawValue,
+                icon: $0.icon,
+                isCustom: false
+            )
+        }
+
+        let custom = settingsStore.customCategories.map {
+            CategorySidebarItem(
+                selection: .custom($0.id),
+                title: $0.name,
+                icon: "tag",
+                isCustom: true
+            )
+        }
+
+        return builtIn + custom
     }
 
     var folderDisplays: [FolderDisplay] {
@@ -380,6 +474,109 @@ final class LauncherViewModel: ObservableObject {
     func clearSearch() {
         query = ""
         shouldFocusSearchField = true
+    }
+
+    func addCustomCategory(named name: String) {
+        guard let categoryID = settingsStore.addCustomCategory(named: name) else {
+            return
+        }
+        selectedCategory = .custom(categoryID)
+    }
+
+    func renameCustomCategory(categoryID: String, to name: String) {
+        settingsStore.renameCustomCategory(categoryID, to: name)
+    }
+
+    func deleteCustomCategory(_ categoryID: String) {
+        settingsStore.deleteCustomCategory(categoryID)
+    }
+
+    func isApp(_ appID: String, inCustomCategory categoryID: String) -> Bool {
+        settingsStore.isApp(appID, inCustomCategory: categoryID)
+    }
+
+    func toggleCustomCategoryMembership(appID: String, categoryID: String) {
+        if settingsStore.isApp(appID, inCustomCategory: categoryID) {
+            settingsStore.removeApp(appID, fromCustomCategory: categoryID)
+        } else {
+            settingsStore.clearSystemCategoryOverride(appID: appID)
+            settingsStore.assignApp(appID, toCustomCategory: categoryID)
+        }
+    }
+
+    func addApp(_ appID: String, toCustomCategory categoryID: String) {
+        settingsStore.clearSystemCategoryOverride(appID: appID)
+        settingsStore.assignApp(appID, toCustomCategory: categoryID)
+    }
+
+    func removeAppFromAllCustomCategories(_ appID: String) {
+        settingsStore.removeAppFromAllCustomCategories(appID)
+    }
+
+    func effectiveSystemCategory(for app: AppItem) -> AppCategory {
+        settingsStore.effectiveCategory(for: app)
+    }
+
+    func hasSystemCategoryOverride(for appID: String) -> Bool {
+        settingsStore.systemCategoryOverride(for: appID) != nil
+    }
+
+    func setSystemCategory(for app: AppItem, to category: AppCategory) {
+        settingsStore.removeAppFromAllCustomCategories(app.id)
+
+        let autoCategory = app.category
+        if category == autoCategory {
+            settingsStore.clearSystemCategoryOverride(appID: app.id)
+        } else {
+            settingsStore.setSystemCategoryOverride(appID: app.id, category: category)
+        }
+    }
+
+    func restoreAutoSystemCategory(for appID: String) {
+        settingsStore.removeAppFromAllCustomCategories(appID)
+        settingsStore.clearSystemCategoryOverride(appID: appID)
+    }
+
+    func canMoveCategoryUp(_ selection: CategorySelection) -> Bool {
+        switch selection {
+        case let .builtIn(category):
+            guard category != .all else { return false }
+            guard let index = settingsStore.orderedSystemCategories.firstIndex(of: category) else { return false }
+            return index > 1
+        case let .custom(categoryID):
+            guard let index = settingsStore.customCategories.firstIndex(where: { $0.id == categoryID }) else { return false }
+            return index > 0
+        }
+    }
+
+    func canMoveCategoryDown(_ selection: CategorySelection) -> Bool {
+        switch selection {
+        case let .builtIn(category):
+            guard category != .all else { return false }
+            guard let index = settingsStore.orderedSystemCategories.firstIndex(of: category) else { return false }
+            return index < settingsStore.orderedSystemCategories.count - 1
+        case let .custom(categoryID):
+            guard let index = settingsStore.customCategories.firstIndex(where: { $0.id == categoryID }) else { return false }
+            return index < settingsStore.customCategories.count - 1
+        }
+    }
+
+    func moveCategoryUp(_ selection: CategorySelection) {
+        switch selection {
+        case let .builtIn(category):
+            settingsStore.moveSystemCategoryUp(category)
+        case let .custom(categoryID):
+            settingsStore.moveCustomCategoryUp(categoryID)
+        }
+    }
+
+    func moveCategoryDown(_ selection: CategorySelection) {
+        switch selection {
+        case let .builtIn(category):
+            settingsStore.moveSystemCategoryDown(category)
+        case let .custom(categoryID):
+            settingsStore.moveCustomCategoryDown(categoryID)
+        }
     }
 
     func nextPage() {
