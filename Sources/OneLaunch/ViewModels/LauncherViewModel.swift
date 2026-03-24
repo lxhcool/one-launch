@@ -16,31 +16,6 @@ struct FolderDisplay: Identifiable, Hashable {
     }
 }
 
-enum CategorySelection: Hashable, Identifiable {
-    case builtIn(AppCategory)
-    case custom(String)
-
-    var id: String {
-        switch self {
-        case let .builtIn(category):
-            return "builtin:\(category.rawValue)"
-        case let .custom(categoryID):
-            return "custom:\(categoryID)"
-        }
-    }
-}
-
-struct CategorySidebarItem: Identifiable, Hashable {
-    let selection: CategorySelection
-    let title: String
-    let icon: String
-    let isCustom: Bool
-
-    var id: String {
-        selection.id
-    }
-}
-
 enum LauncherGridItem: Identifiable, Hashable {
     case app(AppItem)
     case folder(FolderDisplay)
@@ -78,14 +53,6 @@ final class LauncherViewModel: ObservableObject {
     @Published private(set) var isRefreshing = false
     @Published var shouldFocusSearchField = false
     @Published var showSettings = false
-    @Published var selectedCategory: CategorySelection = .builtIn(.all) {
-        didSet {
-            guard selectedCategory != oldValue else { return }
-            currentPage = 0
-            activeFolderID = nil
-            rebuildGridCaches()
-        }
-    }
     @Published private(set) var filteredAppsCache: [AppItem] = []
     @Published private(set) var gridAppsCache: [AppItem] = []
     @Published private(set) var pinnedAppsCache: [AppItem] = []
@@ -132,46 +99,6 @@ final class LauncherViewModel: ObservableObject {
                 self?.rebuildGridCaches()
             }
             .store(in: &cancellables)
-
-        resolvedSettingsStore.$customCategories
-            .dropFirst()
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.handleCategorySidebarConfigurationChange()
-            }
-            .store(in: &cancellables)
-
-        resolvedSettingsStore.$systemCategoryOrder
-            .dropFirst()
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.handleCategorySidebarConfigurationChange()
-            }
-            .store(in: &cancellables)
-
-        resolvedSettingsStore.$hiddenSystemCategoryRawValues
-            .dropFirst()
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.handleCategorySidebarConfigurationChange()
-            }
-            .store(in: &cancellables)
-
-        resolvedSettingsStore.$hiddenCustomCategoryIDs
-            .dropFirst()
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.handleCategorySidebarConfigurationChange()
-            }
-            .store(in: &cancellables)
-
-        resolvedSettingsStore.$systemCategoryOverrides
-            .dropFirst()
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.rebuildGridCaches()
-            }
-            .store(in: &cancellables)
     }
 
     var filteredApps: [AppItem] {
@@ -197,71 +124,6 @@ final class LauncherViewModel: ObservableObject {
     var gridApps: [AppItem] {
         // 搜索时主网格仍显示全部应用（不被过滤），但保持当前排序方式。
         gridAppsCache
-    }
-
-    var filteredGridApps: [AppItem] {
-        let appIDsInCustomCategories = Set(settingsStore.customCategories.flatMap(\.appIDs))
-
-        switch selectedCategory {
-        case .builtIn(.all):
-            return gridApps
-        case let .builtIn(category):
-            return gridApps.filter {
-                !appIDsInCustomCategories.contains($0.id)
-                    && effectiveSystemCategory(for: $0) == category
-            }
-        case let .custom(categoryID):
-            guard let category = settingsStore.customCategories.first(where: { $0.id == categoryID }) else {
-                return []
-            }
-            let appIDs = Set(category.appIDs)
-            return gridApps.filter { appIDs.contains($0.id) }
-        }
-    }
-
-    var editableSystemCategories: [AppCategory] {
-        AppCategory.allCases.filter { $0 != .all }
-    }
-
-    var orderedSystemCategories: [AppCategory] {
-        settingsStore.orderedSystemCategories
-    }
-
-    var categorySidebarItems: [CategorySidebarItem] {
-        let hiddenSystemCategories = Set(settingsStore.hiddenSystemCategoryRawValues)
-        let hiddenCustomCategoryIDs = Set(settingsStore.hiddenCustomCategoryIDs)
-
-        let builtIn = settingsStore.orderedSystemCategories.map {
-            CategorySidebarItem(
-                selection: .builtIn($0),
-                title: $0.rawValue,
-                icon: $0.icon,
-                isCustom: false
-            )
-        }
-        .filter { item in
-            if case let .builtIn(category) = item.selection {
-                return category == .all || !hiddenSystemCategories.contains(category.rawValue)
-            }
-            return true
-        }
-
-        let custom = settingsStore.customCategories.map {
-            CategorySidebarItem(
-                selection: .custom($0.id),
-                title: $0.name,
-                icon: "tag",
-                isCustom: true
-            )
-        }
-        .filter { item in
-            if case let .custom(categoryID) = item.selection {
-                return !hiddenCustomCategoryIDs.contains(categoryID)
-            }
-            return true
-        }
-
-        return builtIn + custom
     }
 
     var folderDisplays: [FolderDisplay] {
@@ -366,11 +228,7 @@ final class LauncherViewModel: ObservableObject {
     }
 
     private func rebuildGridCaches() {
-        guard !ensureSelectedCategoryVisible() else {
-            return
-        }
-
-        let apps = filteredGridApps
+        let apps = gridApps
         let pinnedIDs = Set(settingsStore.pinnedAppIDs)
         let appByID = Dictionary(
             gridApps.map { ($0.id, $0) },
@@ -412,28 +270,6 @@ final class LauncherViewModel: ObservableObject {
         if let activeFolderID, !displays.contains(where: { $0.id == activeFolderID }) {
             self.activeFolderID = nil
         }
-    }
-
-    private func handleCategorySidebarConfigurationChange() {
-        if ensureSelectedCategoryVisible() {
-            return
-        }
-        rebuildGridCaches()
-    }
-
-    private func ensureSelectedCategoryVisible() -> Bool {
-        let visibleSelections = Set(categorySidebarItems.map(\.selection))
-        guard !visibleSelections.contains(selectedCategory) else {
-            return false
-        }
-
-        let fallback = categorySidebarItems.first?.selection ?? .builtIn(.all)
-        guard fallback != selectedCategory else {
-            return false
-        }
-
-        selectedCategory = fallback
-        return true
     }
 
     /// 在后台线程执行，用于避免主线程卡顿（UserDefaults 读取 + 排序）
@@ -554,67 +390,6 @@ final class LauncherViewModel: ObservableObject {
         shouldFocusSearchField = true
     }
 
-    func addCustomCategory(named name: String) {
-        guard let categoryID = settingsStore.addCustomCategory(named: name) else {
-            return
-        }
-        selectedCategory = .custom(categoryID)
-    }
-
-    func renameCustomCategory(categoryID: String, to name: String) {
-        settingsStore.renameCustomCategory(categoryID, to: name)
-    }
-
-    func deleteCustomCategory(_ categoryID: String) {
-        settingsStore.deleteCustomCategory(categoryID)
-    }
-
-    func isApp(_ appID: String, inCustomCategory categoryID: String) -> Bool {
-        settingsStore.isApp(appID, inCustomCategory: categoryID)
-    }
-
-    func toggleCustomCategoryMembership(appID: String, categoryID: String) {
-        if settingsStore.isApp(appID, inCustomCategory: categoryID) {
-            settingsStore.removeApp(appID, fromCustomCategory: categoryID)
-        } else {
-            settingsStore.clearSystemCategoryOverride(appID: appID)
-            settingsStore.assignApp(appID, toCustomCategory: categoryID)
-        }
-    }
-
-    func addApp(_ appID: String, toCustomCategory categoryID: String) {
-        settingsStore.clearSystemCategoryOverride(appID: appID)
-        settingsStore.assignApp(appID, toCustomCategory: categoryID)
-    }
-
-    func removeAppFromAllCustomCategories(_ appID: String) {
-        settingsStore.removeAppFromAllCustomCategories(appID)
-    }
-
-    func effectiveSystemCategory(for app: AppItem) -> AppCategory {
-        settingsStore.effectiveCategory(for: app)
-    }
-
-    func hasSystemCategoryOverride(for appID: String) -> Bool {
-        settingsStore.systemCategoryOverride(for: appID) != nil
-    }
-
-    func setSystemCategory(for app: AppItem, to category: AppCategory) {
-        settingsStore.removeAppFromAllCustomCategories(app.id)
-
-        let autoCategory = app.category
-        if category == autoCategory {
-            settingsStore.clearSystemCategoryOverride(appID: app.id)
-        } else {
-            settingsStore.setSystemCategoryOverride(appID: app.id, category: category)
-        }
-    }
-
-    func restoreAutoSystemCategory(for appID: String) {
-        settingsStore.removeAppFromAllCustomCategories(appID)
-        settingsStore.clearSystemCategoryOverride(appID: appID)
-    }
-
     func isPinned(_ appID: String) -> Bool {
         settingsStore.isAppPinned(appID)
     }
@@ -628,48 +403,6 @@ final class LauncherViewModel: ObservableObject {
             removeAppFromFolderRecords(appID: appID)
         }
         settingsStore.setAppPinned(appID, pinned: pinned)
-    }
-
-    func canMoveCategoryUp(_ selection: CategorySelection) -> Bool {
-        switch selection {
-        case let .builtIn(category):
-            guard category != .all else { return false }
-            guard let index = settingsStore.orderedSystemCategories.firstIndex(of: category) else { return false }
-            return index > 1
-        case let .custom(categoryID):
-            guard let index = settingsStore.customCategories.firstIndex(where: { $0.id == categoryID }) else { return false }
-            return index > 0
-        }
-    }
-
-    func canMoveCategoryDown(_ selection: CategorySelection) -> Bool {
-        switch selection {
-        case let .builtIn(category):
-            guard category != .all else { return false }
-            guard let index = settingsStore.orderedSystemCategories.firstIndex(of: category) else { return false }
-            return index < settingsStore.orderedSystemCategories.count - 1
-        case let .custom(categoryID):
-            guard let index = settingsStore.customCategories.firstIndex(where: { $0.id == categoryID }) else { return false }
-            return index < settingsStore.customCategories.count - 1
-        }
-    }
-
-    func moveCategoryUp(_ selection: CategorySelection) {
-        switch selection {
-        case let .builtIn(category):
-            settingsStore.moveSystemCategoryUp(category)
-        case let .custom(categoryID):
-            settingsStore.moveCustomCategoryUp(categoryID)
-        }
-    }
-
-    func moveCategoryDown(_ selection: CategorySelection) {
-        switch selection {
-        case let .builtIn(category):
-            settingsStore.moveSystemCategoryDown(category)
-        case let .custom(categoryID):
-            settingsStore.moveCustomCategoryDown(categoryID)
-        }
     }
 
     func nextPage() {
@@ -763,6 +496,47 @@ final class LauncherViewModel: ObservableObject {
         }
 
         settingsStore.appFolders = folders
+    }
+
+    /// 通过右键菜单将应用添加到已有文件夹
+    func addAppToFolder(appID: String, folderID: String) {
+        var folders = normalizedFolders(settingsStore.appFolders)
+        // 先从其他文件夹中移除
+        let sourceFolderID = folderContaining(appID: appID, in: folders)
+        if sourceFolderID == folderID { return }
+        if let sourceFolderID {
+            if let idx = folders.firstIndex(where: { $0.id == sourceFolderID }) {
+                folders[idx].appIDs.removeAll { $0 == appID }
+                if folders[idx].appIDs.count < 2 {
+                    folders.remove(at: idx)
+                }
+            }
+        }
+        appendApp(appID, toFolder: folderID, folders: &folders)
+        settingsStore.appFolders = normalizedFolders(folders)
+    }
+
+    /// 通过右键菜单将应用添加到新文件夹
+    func addAppToNewFolder(appID: String) {
+        var folders = normalizedFolders(settingsStore.appFolders)
+        let sourceFolderID = folderContaining(appID: appID, in: folders)
+        if let sourceFolderID {
+            if let idx = folders.firstIndex(where: { $0.id == sourceFolderID }) {
+                folders[idx].appIDs.removeAll { $0 == appID }
+                if folders[idx].appIDs.count < 2 {
+                    folders.remove(at: idx)
+                }
+            }
+        }
+        let newFolder = AppFolder(
+            id: UUID().uuidString,
+            name: "新建文件夹",
+            appIDs: [appID],
+            isAuto: false,
+            autoKey: nil
+        )
+        folders.append(newFolder)
+        settingsStore.appFolders = normalizedFolders(folders)
     }
 
     func groupApp(sourceID: String, onto target: FolderDropTarget) {
@@ -921,7 +695,7 @@ final class LauncherViewModel: ObservableObject {
         return normalizedFolders(settingsStore.appFolders).compactMap { folder in
             // 文件夹内顺序由 folder.appIDs 决定（支持手动拖拽排序）
             let members = folder.appIDs.compactMap { appByID[$0] }
-            guard members.count >= 2 else { return nil }
+            guard !members.isEmpty else { return nil }
             return FolderDisplay(folder: folder, apps: members)
         }
     }
@@ -964,7 +738,7 @@ final class LauncherViewModel: ObservableObject {
                 cleanIDs.append(appID)
             }
 
-            guard cleanIDs.count >= 2 else { continue }
+            guard cleanIDs.count >= 1 else { continue }
             consumed.formUnion(cleanIDs)
 
             var cleanFolder = folder

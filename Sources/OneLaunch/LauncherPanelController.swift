@@ -72,39 +72,28 @@ final class LauncherPanelController: NSObject {
         viewModel.isPresented = true
         viewModel.deferredPrepare()
 
-        // 设置初始状态：透明（不再做缩放，减少掉帧感）
+        // 设置初始状态
         panel.alphaValue = 0
-        viewModel.scale = 1.0
-        
+        viewModel.scale = 0.96
+
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
-        // 首次展示只做淡入，避免大列表缩放导致掉帧观感。
-        if !hasShownPanel {
-            hasShownPanel = true
+        withAnimation(.easeOut(duration: 0.2)) {
             viewModel.scale = 1.0
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.16
-                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                panel.animator().alphaValue = 1
-            }, completionHandler: { [weak self] in
-                MainActor.assumeIsolated {
-                    self?.isAnimating = false
-                    self?.viewModel.isPanelTransitioning = false
-                }
-            })
-            return
         }
 
-        // 统一的动画：仅窗口淡入（避免大列表缩放卡顿）
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.18
+            context.duration = 0.2
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().alphaValue = 1
         }, completionHandler: { [weak self] in
             MainActor.assumeIsolated {
                 self?.isAnimating = false
                 self?.viewModel.isPanelTransitioning = false
+                if !(self?.hasShownPanel ?? true) {
+                    self?.hasShownPanel = true
+                }
             }
         })
     }
@@ -145,21 +134,23 @@ final class LauncherPanelController: NSObject {
         }
 
         isAnimating = true
-        viewModel.isPresented = false
         viewModel.isPanelTransitioning = true
 
-        // 窗口淡出动画（0.25s）
+        withAnimation(.easeIn(duration: 0.18)) {
+            viewModel.scale = 0.96
+        }
+
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.18
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().alphaValue = 0
         }, completionHandler: { [weak self] in
             MainActor.assumeIsolated {
+                self?.viewModel.isPresented = false
                 self?.panel.orderOut(nil)
                 self?.panel.alphaValue = 1
                 self?.viewModel.scale = 1.0
                 self?.viewModel.isPanelTransitioning = false
-                // 动画完成后清空搜索
                 self?.viewModel.clearSearch()
                 self?.isAnimating = false
             }

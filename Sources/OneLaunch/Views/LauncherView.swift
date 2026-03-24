@@ -35,9 +35,9 @@ struct LauncherView: View {
 
     private var columns: [GridItem] {
         let size = effectiveIconSize
-        let minimum = size + 44
-        let maximum = size + 72
-        return [GridItem(.adaptive(minimum: minimum, maximum: maximum), spacing: 16)]
+        let minimum = size + 52
+        let maximum = size + 84
+        return [GridItem(.adaptive(minimum: minimum, maximum: maximum), spacing: 20)]
     }
 
     private var pinnedColumns: [GridItem] {
@@ -60,7 +60,7 @@ struct LauncherView: View {
     }
 
     private var contentBottomInset: CGFloat {
-        settingsStore.categoryBarPosition == .bottom ? 148 : 72
+        72
     }
 
     private var contentMaxWidth: CGFloat {
@@ -96,40 +96,33 @@ struct LauncherView: View {
                         if viewModel.showSettings {
                             dismissSettings()
                         } else if viewModel.presentedFolder != nil {
-                            viewModel.closeFolder()
+                            dismissFolder()
                         } else {
                             onClose()
                         }
                     }
 
-                VStack(spacing: 40) {
+                VStack(spacing: 24) {
                     header
 
                     content
                 }
                 .frame(maxWidth: contentMaxWidth, maxHeight: .infinity, alignment: .top)
                 .padding(.horizontal, 52)
-                .padding(.top, max(geometry.safeAreaInsets.top + 26, 44))
+                .padding(.top, max(geometry.safeAreaInsets.top + 16, 32))
                 .padding(.bottom, contentBottomInset)
+                .scaleEffect(viewModel.scale)
 
                 topLeadingMeta(geometry: geometry)
 
                 topTrailingActions(geometry: geometry)
-
-                if shouldShowCategoryBar {
-                    categoryBar(
-                        maxHeight: geometry.size.height - 64,
-                        maxWidth: geometry.size.width
-                    )
-                        .zIndex(20)
-                }
 
                 // 搜索面板 - 悬浮在最上层，不影响网格布局
                 if viewModel.isSearching && !viewModel.searchResults.isEmpty {
                     searchResultsPanel
                         .position(
                             x: geometry.size.width / 2,
-                            y: max(geometry.safeAreaInsets.top + 26, 44) + 40 + 62 + 16 + 180
+                            y: max(geometry.safeAreaInsets.top + 16, 32) + 16 + 80 + 20 + 52 + 16 + 180
                         )
                         .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
                         .animation(.easeOut(duration: 0.2), value: viewModel.isSearching)
@@ -148,12 +141,18 @@ struct LauncherView: View {
                 .scaleEffect(viewModel.showSettings ? 1 : 0.95)
                 .allowsHitTesting(viewModel.showSettings)
 
-                if let folder = viewModel.presentedFolder {
-                    Color.black.opacity(0.35)
-                        .ignoresSafeArea()
-                        .onTapGesture { viewModel.closeFolder() }
+                // 文件夹弹窗 — 与设置面板相同的动画交互
+                let folderIsOpen = viewModel.presentedFolder != nil
+                Color.black.opacity(folderIsOpen ? 0.35 : 0)
+                    .ignoresSafeArea()
+                    .onTapGesture { dismissFolder() }
+                    .allowsHitTesting(folderIsOpen)
 
+                if let folder = viewModel.presentedFolder {
                     folderPanel(for: folder)
+                        .opacity(folderIsOpen ? 1 : 0)
+                        .scaleEffect(folderIsOpen ? 1 : 0.95)
+                        .allowsHitTesting(folderIsOpen)
                 }
             }
             .coordinateSpace(name: "launcherGridSpace")
@@ -166,6 +165,7 @@ struct LauncherView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(.easeInOut(duration: 0.2), value: viewModel.showSettings)
+            .animation(.easeInOut(duration: 0.2), value: viewModel.activeFolderID)
         }
         .ignoresSafeArea()
         .background(Color.clear)
@@ -181,17 +181,11 @@ struct LauncherView: View {
         .onChange(of: viewModel.isPresented) { _, isPresented in
             updateAdjacentPageRendering(for: isPresented)
         }
-        .onChange(of: viewModel.selectedCategory) { _, _ in
-            pageOffset = 0
-            if viewModel.isPresented {
-                updateAdjacentPageRendering(for: true)
-            }
-        }
         .onExitCommand {
             if viewModel.showSettings {
                 dismissSettings()
             } else if viewModel.presentedFolder != nil {
-                viewModel.closeFolder()
+                dismissFolder()
             } else {
                 onClose()
             }
@@ -202,6 +196,19 @@ struct LauncherView: View {
     private func dismissSettings() {
         withAnimation(.easeInOut(duration: 0.2)) {
             viewModel.showSettings = false
+        }
+    }
+
+    private func dismissFolder() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            commitFolderNameIfNeeded()
+            viewModel.closeFolder()
+        }
+    }
+
+    private func commitFolderNameIfNeeded() {
+        if let folder = viewModel.presentedFolder {
+            commitFolderName(for: folder.id)
         }
     }
 
@@ -273,14 +280,33 @@ struct LauncherView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
-            Spacer(minLength: 0)
+        VStack(spacing: 18) {
+            // 时间日期显示
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                VStack(spacing: 6) {
+                    Text(context.date, format: .dateTime.hour().minute())
+                        .font(.system(size: 64, weight: .bold, design: .rounded))
+                        .foregroundStyle(
+                            .linearGradient(
+                                colors: [.white, .white.opacity(0.85)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .shadow(color: Color.black.opacity(0.2), radius: 12, y: 3)
+                        .contentTransition(.numericText())
+
+                    Text(context.date, format: .dateTime.weekday(.wide).month(.wide).day())
+                        .font(.system(size: 16, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.55))
+                        .tracking(0.5)
+                }
+            }
+            .onTapGesture {}
 
             searchBar
-
-            Spacer(minLength: 0)
         }
-        .padding(.top, 40)
+        .padding(.top, 16)
         .padding(.horizontal, 8)
         .onTapGesture {}
     }
@@ -288,35 +314,47 @@ struct LauncherView: View {
     @State private var hoveredButton: String? = nil
 
     private func topTrailingActions(geometry: GeometryProxy) -> some View {
-        HStack(spacing: 8) {
-            ForEach([
+        HStack(spacing: 1) {
+            ForEach(Array([
                 ("gearshape", { viewModel.showSettings.toggle() }, "设置"),
                 ("arrow.clockwise", { viewModel.refreshApplications() }, "重新扫描"),
                 ("xmark", { onClose() }, "关闭")
-            ], id: \.0) { icon, action, help in
+            ].enumerated()), id: \.offset) { index, item in
+                let (icon, action, help) = item
                 Button(action: action) {
                     Image(systemName: icon)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.primary)
-                        .frame(width: 36, height: 36)
+                        .frame(width: 34, height: 34)
                         .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Color.white.opacity(hoveredButton == icon ? 0.12 : 0.06))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .stroke(Color.white.opacity(hoveredButton == icon ? 0.2 : 0.08), lineWidth: 1)
-                                )
+                            Color.white.opacity(hoveredButton == icon ? 0.12 : 0.0)
                         )
                 }
                 .buttonStyle(.plain)
                 .help(help)
                 .onHover { hovering in
-                    withAnimation(.easeOut(duration: 0.1)) {
+                    withAnimation(.easeOut(duration: 0.12)) {
                         hoveredButton = hovering ? icon : nil
                     }
                 }
+
+                if index < 2 {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.10))
+                        .frame(width: 0.5, height: 18)
+                }
             }
         }
+        .background(
+            Capsule()
+                .fill(.thinMaterial)
+                .overlay(
+                    Capsule()
+                        .stroke(Color.white.opacity(0.10), lineWidth: 0.5)
+                )
+                .shadow(color: Color.black.opacity(0.10), radius: 8, y: 4)
+        )
+        .clipShape(Capsule())
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         .padding(.trailing, 20)
         .padding(.top, max(geometry.safeAreaInsets.top + 20, 20))
@@ -358,7 +396,7 @@ struct LauncherView: View {
                         } else {
                             ScrollView(.vertical, showsIndicators: false) {
                                 VStack(spacing: 0) {
-                                    LazyVGrid(columns: columns, spacing: 18) {
+                                    LazyVGrid(columns: columns, spacing: 22) {
                                         ForEach(viewModel.gridItems) { item in
                                             switch item {
                                             case let .app(app):
@@ -368,9 +406,9 @@ struct LauncherView: View {
                                             }
                                         }
                                     }
-                                    .padding(.top, 4)
-                                    .padding(.horizontal, 4)
-                                    .padding(.bottom, 10)
+                                    .padding(.top, 8)
+                                    .padding(.horizontal, 8)
+                                    .padding(.bottom, 16)
 
                                     Color.clear
                                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -379,7 +417,7 @@ struct LauncherView: View {
                                             if viewModel.showSettings {
                                                 dismissSettings()
                                             } else if viewModel.presentedFolder != nil {
-                                                viewModel.closeFolder()
+                                                dismissFolder()
                                             } else {
                                                 onClose()
                                             }
@@ -396,191 +434,37 @@ struct LauncherView: View {
     }
 
     private var pinnedAppsSection: some View {
-        let pinnedIconSize = max(28, min(settingsStore.iconSize - 22, 36))
+        let pinnedIconSize = max(36, min(settingsStore.iconSize - 8, 48))
 
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Text("固定")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.primary)
-
-                Text("\(viewModel.pinnedApps.count)")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(Color.white.opacity(0.08))
-                    )
-            }
-            .padding(.horizontal, 4)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(viewModel.pinnedApps) { app in
-                        compactPinnedAppItem(for: app, iconSize: pinnedIconSize)
-                            .contextMenu {
-                                customCategoryContextMenu(for: app)
-                            }
-                    }
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 16) {
+                ForEach(viewModel.pinnedApps) { app in
+                    compactPinnedAppItem(for: app, iconSize: pinnedIconSize)
+                        .contextMenu {
+                            customCategoryContextMenu(for: app)
+                        }
                 }
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
             }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
         }
-        .padding(.leading, 34)
+        .background(
+            Capsule()
+                .fill(Color.white.opacity(0.06))
+                .overlay(
+                    Capsule()
+                        .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
+                )
+        )
+        .padding(.horizontal, 34)
     }
 
     private func compactPinnedAppItem(for app: AppItem, iconSize: Double) -> some View {
-        Button {
+        PinnedAppButton(app: app, iconSize: iconSize, iconProvider: iconProvider) {
             onClose()
             viewModel.launch(app)
-        } label: {
-            Image(nsImage: iconProvider.icon(for: app))
-                .resizable()
-                .interpolation(.high)
-                .frame(width: iconSize, height: iconSize)
-                .clipShape(RoundedRectangle(cornerRadius: max(8, iconSize * 0.22), style: .continuous))
-                .padding(7)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color.white.opacity(0.045))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(Color.white.opacity(0.06), lineWidth: 1)
-                        )
-                )
-        }
-        .buttonStyle(.plain)
-        .help(app.name)
-    }
-
-    @ViewBuilder
-    private func categoryBar(maxHeight: CGFloat, maxWidth: CGFloat) -> some View {
-        switch settingsStore.categoryBarPosition {
-        case .left:
-            sideCategoryBar(maxHeight: maxHeight, position: .left)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                .padding(.leading, 0)
-        case .right:
-            sideCategoryBar(maxHeight: maxHeight, position: .right)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-                .padding(.trailing, 0)
-        case .bottom:
-            bottomCategoryBar(maxWidth: maxWidth)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                .padding(.bottom, 24)
-                .ignoresSafeArea(edges: .bottom)
         }
     }
-
-    private func sideCategoryBar(maxHeight: CGFloat, position: CategoryBarPosition) -> some View {
-        let categories = viewModel.categorySidebarItems
-
-        return ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: position == .right ? .trailing : .leading, spacing: 8) {
-                ForEach(Array(categories.enumerated()), id: \.element.id) { index, category in
-                    CategorySidebarItemView(
-                        icon: category.icon,
-                        title: category.title,
-                        isSelected: viewModel.selectedCategory == category.selection,
-                        placement: position == .right ? .right : .left,
-                        extraOffset: ladderTrailingPadding(for: index),
-                        action: {
-                            pageOffset = 0
-                            viewModel.selectedCategory = category.selection
-                        }
-                    )
-                    .contextMenu {
-                        categoryQuickActions(for: category)
-                    }
-                }
-            }
-            .padding(.leading, position == .right ? 8 : 0)
-            .padding(.trailing, position == .right ? 0 : 8)
-            .padding(.vertical, 10)
-        }
-        .frame(maxHeight: max(220, min(CGFloat(categories.count) * 44 + 32, maxHeight)))
-        .fixedSize(horizontal: true, vertical: false)
-    }
-
-    private func bottomCategoryBar(maxWidth: CGFloat) -> some View {
-        let categories = viewModel.categorySidebarItems
-        let barWidth = min(contentMaxWidth, maxWidth - 24)
-
-        return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(categories) { category in
-                    CategorySidebarItemView(
-                        icon: category.icon,
-                        title: category.title,
-                        isSelected: viewModel.selectedCategory == category.selection,
-                        placement: .bottom,
-                        extraOffset: 0,
-                        action: {
-                            pageOffset = 0
-                            viewModel.selectedCategory = category.selection
-                        }
-                    )
-                    .contextMenu {
-                        categoryQuickActions(for: category)
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-            .frame(minWidth: barWidth, alignment: .center)
-        }
-        .frame(width: barWidth)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private var shouldShowCategoryBar: Bool {
-        viewModel.presentedFolder == nil
-    }
-
-    private func ladderTrailingPadding(for index: Int) -> CGFloat {
-        let pattern: [CGFloat] = [16, 4, 12, 0, 14, 6, 10, 2, 8, 0]
-        return pattern[index % pattern.count]
-    }
-
-    @ViewBuilder
-    private func categoryQuickActions(for category: CategorySidebarItem) -> some View {
-        Button {
-            viewModel.moveCategoryUp(category.selection)
-        } label: {
-            Label("上移", systemImage: "chevron.up")
-        }
-        .disabled(!viewModel.canMoveCategoryUp(category.selection))
-
-        Button {
-            viewModel.moveCategoryDown(category.selection)
-        } label: {
-            Label("下移", systemImage: "chevron.down")
-        }
-        .disabled(!viewModel.canMoveCategoryDown(category.selection))
-
-        Divider()
-
-        switch category.selection {
-        case .builtIn(.all):
-            Button("“全部”分类不可隐藏") {}
-                .disabled(true)
-        case let .builtIn(systemCategory):
-            Button(role: .destructive) {
-                settingsStore.setSystemCategoryHidden(systemCategory, hidden: true)
-            } label: {
-                Label("隐藏此分类", systemImage: "eye.slash")
-            }
-        case let .custom(categoryID):
-            Button(role: .destructive) {
-                settingsStore.setCustomCategoryHidden(categoryID, hidden: true)
-            } label: {
-                Label("隐藏此分类", systemImage: "eye.slash")
-            }
-        }
-    }
-
     private var appGrid: some View {
         LazyVGrid(columns: columns, spacing: 18) {
             ForEach(viewModel.gridItems) { item in
@@ -683,10 +567,39 @@ struct LauncherView: View {
     }
 
     private func appGridItem(for app: AppItem) -> some View {
+        let isDragging = draggingAppID == app.id
+        let isHoverTarget = hoverGroupTarget == .app(app.id)
+
         return AppCardView(app: app, iconSize: effectiveIconSize) {
             onClose()
             viewModel.launch(app)
         }
+        .overlay(itemChromeOverlay(isHoverTarget: isHoverTarget, itemID: app.id))
+        .offset(isDragging ? draggingAppTranslation : .zero)
+        .scaleEffect(isDragging ? 1.05 : (isHoverTarget ? 1.08 : 1.0))
+        .shadow(color: .black.opacity(isDragging ? 0.3 : 0), radius: isDragging ? 16 : 0, y: isDragging ? 8 : 0)
+        .zIndex(isDragging ? 100 : 0)
+        .animation(.spring(response: 0.25, dampingFraction: 0.75), value: isHoverTarget)
+        .background(
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear {
+                        let frame = geo.frame(in: .named("launcherGridSpace"))
+                        gridFrames[app.id] = GridDropFrameEntry(
+                            itemID: app.id,
+                            target: .app(app.id),
+                            frame: frame
+                        )
+                    }
+                    .onChange(of: geo.frame(in: .named("launcherGridSpace"))) { _, newFrame in
+                        gridFrames[app.id] = GridDropFrameEntry(
+                            itemID: app.id,
+                            target: .app(app.id),
+                            frame: newFrame
+                        )
+                    }
+            }
+        )
         .simultaneousGesture(dragGesture(for: app.id))
         .contextMenu {
             customCategoryContextMenu(for: app)
@@ -711,6 +624,10 @@ struct LauncherView: View {
     }
 
     private func folderGridItem(for folder: FolderDisplay) -> some View {
+        let folderItemID = "folder:\(folder.id)"
+        let isDragging = draggingFolderID == folder.id
+        let isHoverTarget = hoverGroupTarget == .folder(folder.id)
+
         return FolderCardView(
             folder: folder.folder,
             apps: folder.apps,
@@ -721,6 +638,33 @@ struct LauncherView: View {
                 viewModel.launch(app)
             }
         )
+        .overlay(itemChromeOverlay(isHoverTarget: isHoverTarget, itemID: folderItemID))
+        .offset(isDragging ? draggingFolderTranslation : .zero)
+        .scaleEffect(isDragging ? 1.05 : (isHoverTarget ? 1.08 : 1.0))
+        .shadow(color: .black.opacity(isDragging ? 0.3 : 0), radius: isDragging ? 16 : 0, y: isDragging ? 8 : 0)
+        .zIndex(isDragging ? 100 : 0)
+        .animation(.spring(response: 0.25, dampingFraction: 0.75), value: isHoverTarget)
+        .background(
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear {
+                        let frame = geo.frame(in: .named("launcherGridSpace"))
+                        gridFrames[folderItemID] = GridDropFrameEntry(
+                            itemID: folderItemID,
+                            target: .folder(folder.id),
+                            frame: frame
+                        )
+                    }
+                    .onChange(of: geo.frame(in: .named("launcherGridSpace"))) { _, newFrame in
+                        gridFrames[folderItemID] = GridDropFrameEntry(
+                            itemID: folderItemID,
+                            target: .folder(folder.id),
+                            frame: newFrame
+                        )
+                    }
+            }
+        )
+        .simultaneousGesture(folderDragGesture(for: folder.id))
         .contextMenu {
             Button("解散文件夹") {
                 viewModel.dissolveFolder(folder.id)
@@ -729,14 +673,14 @@ struct LauncherView: View {
     }
 
     private func dragGesture(for appID: String) -> some Gesture {
-        DragGesture(minimumDistance: 1, coordinateSpace: .named("launcherGridSpace"))
+        DragGesture(minimumDistance: 3, coordinateSpace: .named("launcherGridSpace"))
             .onChanged { value in
                 guard !viewModel.isSearching else { return }
                 guard draggingFolderID == nil else { return }
 
                 let horizontal = abs(value.translation.width)
                 let vertical = abs(value.translation.height)
-                if draggingAppID == nil, horizontal > vertical * 1.15 {
+                if draggingAppID == nil, horizontal > vertical * 1.5 {
                     return
                 }
 
@@ -776,14 +720,14 @@ struct LauncherView: View {
     }
 
     private func folderDragGesture(for folderID: String) -> some Gesture {
-        DragGesture(minimumDistance: 2, coordinateSpace: .named("launcherGridSpace"))
+        DragGesture(minimumDistance: 4, coordinateSpace: .named("launcherGridSpace"))
             .onChanged { value in
                 guard !viewModel.isSearching else { return }
                 guard draggingAppID == nil else { return }
 
                 let horizontal = abs(value.translation.width)
                 let vertical = abs(value.translation.height)
-                if draggingFolderID == nil, horizontal > vertical * 1.15 {
+                if draggingFolderID == nil, horizontal > vertical * 1.5 {
                     return
                 }
 
@@ -849,7 +793,7 @@ struct LauncherView: View {
     }
 
     private func groupingFrame(for frame: CGRect) -> CGRect {
-        frame.insetBy(dx: frame.width * 0.18, dy: frame.height * 0.18)
+        frame.insetBy(dx: frame.width * 0.12, dy: frame.height * 0.12)
     }
 
     private func distanceSquared(from point: CGPoint, to target: CGPoint) -> CGFloat {
@@ -865,85 +809,102 @@ struct LauncherView: View {
             .padding(4)
 
         if let reorderPosition, reorderPosition.targetItemID == itemID, hoverGroupTarget == nil {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(Color.white.opacity(0.95))
-                .frame(width: 4)
-                .padding(.vertical, 10)
-                .frame(maxWidth: .infinity, alignment: reorderPosition.placeAfter ? .trailing : .leading)
-                .shadow(color: .white.opacity(0.35), radius: 8)
-                .padding(reorderPosition.placeAfter ? .trailing : .leading, 1)
+            VStack {
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.0), Color.white.opacity(0.85), Color.white.opacity(0.0)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: 2.5, height: effectiveIconSize * 0.85)
+
+                Spacer(minLength: 0)
+            }
+            .padding(.top, 12)
+            .frame(maxWidth: .infinity, alignment: reorderPosition.placeAfter ? .trailing : .leading)
+            .padding(reorderPosition.placeAfter ? .trailing : .leading, -1)
         }
     }
 
     private func folderPanel(for folder: FolderDisplay) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(spacing: 0) {
             // Header
-            HStack(alignment: .top, spacing: 14) {
-                folderHeroPreview(for: folder)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    TextField("文件夹名称", text: Binding(
-                        get: { folderNameDraft },
-                        set: { folderNameDraft = $0 }
-                    ))
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(.primary)
-                    .onSubmit {
-                        commitFolderName(for: folder.id)
-                    }
-
-                    HStack(spacing: 8) {
-                        folderInfoBadge(systemImage: "apps.ipad", title: "\(folder.apps.count)")
-                        folderInfoBadge(systemImage: "hand.tap", title: "点击打开")
-                    }
+            HStack(spacing: 12) {
+                TextField("文件夹名称", text: Binding(
+                    get: { folderNameDraft },
+                    set: { folderNameDraft = $0 }
+                ))
+                .textFieldStyle(.plain)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(.primary)
+                .onSubmit {
+                    commitFolderName(for: folder.id)
                 }
+
+                Text("\(folder.apps.count) 个应用")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
 
                 Spacer(minLength: 0)
 
-                HStack(spacing: 6) {
-                    Button {
-                        viewModel.dissolveFolder(folder.id)
-                    } label: {
-                        Label("解散", systemImage: "folder.badge.minus")
-                            .font(.system(size: 11, weight: .medium))
-                    }
-                    .buttonStyle(FolderPanelButtonStyle())
-
-                    Button {
-                        commitFolderName(for: folder.id)
-                        viewModel.closeFolder()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 10, weight: .semibold))
-                            .frame(width: 28, height: 28)
-                    }
-                    .buttonStyle(FolderPanelButtonStyle())
+                Button {
+                    viewModel.dissolveFolder(folder.id)
+                } label: {
+                    Image(systemName: "folder.badge.minus")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 30, height: 30)
+                        .background(Circle().fill(Color.white.opacity(0.06)))
                 }
+                .buttonStyle(.plain)
+                .help("解散文件夹")
+
+                Button {
+                    commitFolderName(for: folder.id)
+                    dismissFolder()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 30, height: 30)
+                        .background(Circle().fill(Color.white.opacity(0.06)))
+                }
+                .buttonStyle(.plain)
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
+            .padding(.bottom, 14)
+
+            Divider().opacity(0.3)
 
             // Content
             ScrollView(.vertical, showsIndicators: false) {
                 let size = folderPanelIconSize
-                let minimum = size + 44
-                let maximum = size + 72
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: minimum, maximum: maximum), spacing: 12)], spacing: 12) {
+                let minimum = size + 36
+                let maximum = size + 56
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: minimum, maximum: maximum), spacing: 10)], spacing: 10) {
                     ForEach(folder.apps) { app in
                         folderAppCard(app: app, folder: folder)
                     }
                 }
-                .padding(.vertical, 2)
+                .padding(16)
             }
         }
-        .padding(18)
-        .frame(width: 600, height: 400)
+        .frame(width: 520, height: 380)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(.ultraThinMaterial)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(.regularMaterial)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 0.5)
                 )
+                .shadow(color: Color.black.opacity(0.06), radius: 3, y: 1)
+                .shadow(color: Color.black.opacity(0.22), radius: 32, y: 14)
         )
         .onAppear {
             folderNameDraft = folder.folder.name
@@ -954,7 +915,7 @@ struct LauncherView: View {
     private func folderAppCard(app: AppItem, folder: FolderDisplay) -> some View {
         return AppCardView(app: app, iconSize: folderPanelIconSize) {
             commitFolderName(for: folder.id)
-            viewModel.closeFolder()
+            dismissFolder()
             onClose()
             viewModel.launch(app)
         }
@@ -967,9 +928,6 @@ struct LauncherView: View {
 
     @ViewBuilder
     private func customCategoryContextMenu(for app: AppItem) -> some View {
-        let customCategories = settingsStore.customCategories
-        let effectiveSystemCategory = viewModel.effectiveSystemCategory(for: app)
-        let hasSystemOverride = viewModel.hasSystemCategoryOverride(for: app.id)
         let isPinned = viewModel.isPinned(app.id)
 
         Button {
@@ -980,74 +938,33 @@ struct LauncherView: View {
 
         Divider()
 
-        Menu {
-            ForEach(viewModel.editableSystemCategories, id: \.rawValue) { category in
-                Button {
-                    viewModel.setSystemCategory(for: app, to: category)
-                } label: {
-                    HStack {
-                        Text(category.rawValue)
-                        Spacer()
-                        if effectiveSystemCategory == category {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Color.accentColor)
-                        }
-                    }
-                }
-            }
-
-            if hasSystemOverride {
-                Divider()
-                Button("恢复自动分类") {
-                    viewModel.restoreAutoSystemCategory(for: app.id)
-                }
-            }
-        } label: {
-            Label("系统分类", systemImage: "square.grid.2x2")
-        }
-
-        Divider()
-
-        if customCategories.isEmpty {
+        // 文件夹菜单
+        let existingFolders = viewModel.folderDisplays
+        if existingFolders.isEmpty {
             Button {
-                viewModel.showSettings = true
+                viewModel.addAppToNewFolder(appID: app.id)
             } label: {
-                Label("新建自定义分类", systemImage: "plus")
+                Label("新建文件夹", systemImage: "folder.badge.plus")
             }
         } else {
-            let assignedCategories = customCategories.filter { category in
-                viewModel.isApp(app.id, inCustomCategory: category.id)
-            }
-
             Menu {
-                ForEach(customCategories, id: \.id) { category in
+                ForEach(existingFolders) { folder in
                     Button {
-                        viewModel.toggleCustomCategoryMembership(appID: app.id, categoryID: category.id)
+                        viewModel.addAppToFolder(appID: app.id, folderID: folder.id)
                     } label: {
-                        HStack {
-                            Text(category.name)
-                            Spacer()
-                            if viewModel.isApp(app.id, inCustomCategory: category.id) {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(Color.accentColor)
-                            }
-                        }
+                        Label(folder.folder.name, systemImage: "folder")
                     }
                 }
 
-                if !assignedCategories.isEmpty {
-                    Divider()
+                Divider()
 
-                    Button(role: .destructive) {
-                        viewModel.removeAppFromAllCustomCategories(app.id)
-                    } label: {
-                        Label("清除全部分类", systemImage: "xmark.circle")
-                    }
+                Button {
+                    viewModel.addAppToNewFolder(appID: app.id)
+                } label: {
+                    Label("新建文件夹", systemImage: "folder.badge.plus")
                 }
             } label: {
-                Label("自定义分类", systemImage: "tag")
+                Label("添加到文件夹", systemImage: "folder.badge.plus")
             }
         }
     }
@@ -1120,69 +1037,8 @@ struct LauncherView: View {
         }
     }
 
-    private func folderHeroPreview(for folder: FolderDisplay) -> some View {
-        let heroSize: Double = 100
-        let gap: Double = 6
-        let tileSize: Double = 36
-
-        return ZStack {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.08))
-
-            VStack(spacing: gap) {
-                ForEach(0..<2, id: \.self) { row in
-                    HStack(spacing: gap) {
-                        ForEach(0..<2, id: \.self) { column in
-                            let index = row * 2 + column
-                            if folder.apps.indices.contains(index) {
-                                Image(nsImage: iconProvider.icon(for: folder.apps[index]))
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: tileSize, height: tileSize)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            } else {
-                                Color.clear
-                                    .frame(width: tileSize, height: tileSize)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .frame(width: heroSize, height: heroSize)
-    }
-
-    private func folderInfoBadge(systemImage: String, title: String) -> some View {
-        Label(title, systemImage: systemImage)
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(
-                Capsule()
-                    .fill(Color.white.opacity(0.08))
-                    .overlay(
-                        Capsule()
-                            .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
-                    )
-            )
-    }
-
-    struct FolderPanelButtonStyle: ButtonStyle {
-        func makeBody(configuration: Configuration) -> some View {
-            configuration.label
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.white.opacity(0.06))
-                )
-        }
-    }
-
     private func topLeadingMeta(geometry: GeometryProxy) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             // Status badge
             HStack(spacing: 6) {
                 Circle()
@@ -1193,12 +1049,10 @@ struct LauncherView: View {
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(
-                Capsule()
-                    .fill(Color.black.opacity(0.2))
-            )
+
+            Rectangle()
+                .fill(Color.white.opacity(0.10))
+                .frame(width: 0.5, height: 14)
 
             // Shortcut hint
             HStack(spacing: 3) {
@@ -1208,15 +1062,20 @@ struct LauncherView: View {
                     .font(.system(size: 11, weight: .semibold))
             }
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(
-                Capsule()
-                    .fill(Color.black.opacity(0.2))
-            )
 
             Spacer()
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    Capsule()
+                        .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+                )
+        )
+        .fixedSize()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.leading, 20)
         .padding(.top, max(geometry.safeAreaInsets.top + 20, 20))
@@ -1224,11 +1083,15 @@ struct LauncherView: View {
 
     @State private var isSearchFocused = false
 
+    private var searchBarActive: Bool {
+        isSearchFocused || viewModel.isSearching
+    }
+
     private var searchBar: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.white.opacity(searchBarActive ? 0.8 : 0.4))
 
             SearchField(
                 text: $viewModel.query,
@@ -1249,36 +1112,25 @@ struct LauncherView: View {
             if !viewModel.query.isEmpty {
                 Button(action: viewModel.clearSearch) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 18))
-                        .foregroundStyle(.secondary.opacity(0.7))
+                        .font(.system(size: 14))
+                        .foregroundStyle(.white.opacity(0.4))
                 }
                 .buttonStyle(.plain)
                 .transition(.opacity.combined(with: .scale))
             }
         }
-        .padding(.horizontal, 20)
-        .frame(width: 520, height: 62)
+        .padding(.horizontal, 22)
+        .frame(width: 460, height: 48)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(.ultraThinMaterial)
+            Capsule()
+                .fill(Color.white.opacity(searchBarActive ? 0.12 : 0.08))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(
-                            isSearchFocused || viewModel.isSearching
-                                ? Color.white.opacity(0.35)
-                                : Color.white.opacity(0.12),
-                            lineWidth: (isSearchFocused || viewModel.isSearching) ? 1.5 : 1
-                        )
+                    Capsule()
+                        .stroke(Color.white.opacity(searchBarActive ? 0.20 : 0.10), lineWidth: 0.5)
                 )
-                .shadow(
-                    color: Color.black.opacity((isSearchFocused || viewModel.isSearching) ? 0.25 : 0.15),
-                    radius: (isSearchFocused || viewModel.isSearching) ? 20 : 12,
-                    x: 0,
-                    y: (isSearchFocused || viewModel.isSearching) ? 8 : 4
-                )
+                .shadow(color: Color.black.opacity(0.10), radius: 8, y: 3)
         )
-        .animation(.easeOut(duration: 0.2), value: isSearchFocused)
-        .animation(.easeOut(duration: 0.2), value: viewModel.isSearching)
+        .animation(.easeInOut(duration: 0.2), value: searchBarActive)
     }
 
     @State private var searchScrollProxy: ScrollViewProxy? = nil
@@ -1292,7 +1144,7 @@ struct LauncherView: View {
                             .id("row-\(index)")
                     }
                 }
-                .padding(8)
+                .padding(6)
             }
             .onChange(of: viewModel.searchSelectedIndex) { _, newIndex in
                 withAnimation(.easeOut(duration: 0.15)) {
@@ -1300,21 +1152,17 @@ struct LauncherView: View {
                 }
             }
         }
-        .frame(width: 520)
+        .frame(width: 500)
         .frame(maxHeight: 360)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.ultraThinMaterial)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(.thinMaterial)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(Color.white.opacity(0.10), lineWidth: 0.5)
                 )
-                .shadow(
-                    color: Color.black.opacity(0.2),
-                    radius: 24,
-                    x: 0,
-                    y: 12
-                )
+                .shadow(color: Color.black.opacity(0.10), radius: 4, y: 2)
+                .shadow(color: Color.black.opacity(0.18), radius: 24, y: 12)
         )
     }
 
@@ -1491,130 +1339,40 @@ struct LauncherView: View {
     }
 }
 
-private enum CategorySidebarPlacement {
-    case left
-    case right
-    case bottom
-}
-
-private struct CategorySidebarItemView: View {
-    let icon: String
-    let title: String
-    let isSelected: Bool
-    let placement: CategorySidebarPlacement
-    let extraOffset: CGFloat
+private struct PinnedAppButton: View {
+    let app: AppItem
+    let iconSize: Double
+    @ObservedObject var iconProvider: AppIconProvider
     let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            if placement == .bottom {
-                VStack(spacing: 6) {
-                    Image(systemName: icon)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.9))
-                        .frame(width: 42, height: 42)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(isSelected ? Color.accentColor.opacity(0.85) : Color.white.opacity(0.06))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(isSelected ? Color.accentColor.opacity(0.55) : Color.white.opacity(0.08), lineWidth: 1)
-                        )
+            VStack(spacing: 4) {
+                Image(nsImage: iconProvider.icon(for: app))
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: iconSize, height: iconSize)
+                    .clipShape(RoundedRectangle(cornerRadius: max(8, iconSize * 0.22), style: .continuous))
+                    .shadow(color: Color.black.opacity(0.06), radius: 1, y: 1)
+                    .shadow(color: Color.black.opacity(isHovered ? 0.16 : 0), radius: 8, y: 4)
+                    .scaleEffect(isHovered ? 1.12 : 1.0)
+                    .animation(.spring(response: 0.28, dampingFraction: 0.72), value: isHovered)
 
-                    Text(title)
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.9))
-                        .lineLimit(1)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(width: 54)
-                .animation(.easeOut(duration: 0.14), value: isHovered)
-            } else {
-                HStack(spacing: 8) {
-                    Image(systemName: icon)
-                        .font(.system(size: 13, weight: .medium))
-                        .frame(width: 16)
-
-                    Text(title)
-                        .font(.system(size: 12.5, weight: .medium))
-                        .lineLimit(1)
-                }
-                .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.9))
-                .padding(.leading, leadingPadding)
-                .padding(.trailing, trailingPadding)
-                .padding(.vertical, 8)
-                .background(
-                    UnevenRoundedRectangle(
-                        cornerRadii: cornerRadii,
-                        style: .continuous
-                    )
-                        .fill(isSelected ? Color.accentColor.opacity(0.85) : Color.white.opacity(0.06))
-                )
-                .overlay(
-                    UnevenRoundedRectangle(
-                        cornerRadii: cornerRadii,
-                        style: .continuous
-                    )
-                        .stroke(isSelected ? Color.accentColor.opacity(0.55) : Color.white.opacity(0.08), lineWidth: 1)
-                )
-                .animation(.easeOut(duration: 0.14), value: isHovered)
-                .fixedSize(horizontal: true, vertical: false)
+                Text(app.name)
+                    .font(.system(size: 9.5, weight: isHovered ? .medium : .regular))
+                    .foregroundStyle(isHovered ? .primary : .secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(width: iconSize + 12)
             }
+            .padding(.vertical, 2)
         }
         .buttonStyle(.plain)
         .onHover { hovering in
             isHovered = hovering
         }
-    }
-
-    private var leadingPadding: CGFloat {
-        switch placement {
-        case .left:
-            return 8
-        case .right:
-            return 12 + extraOffset + (isHovered ? 6 : 0)
-        case .bottom:
-            return 10 + (isHovered ? 4 : 0)
-        }
-    }
-
-    private var trailingPadding: CGFloat {
-        switch placement {
-        case .left:
-            return 12 + extraOffset + (isHovered ? 6 : 0)
-        case .right:
-            return 0
-        case .bottom:
-            return 10 + (isHovered ? 4 : 0)
-        }
-    }
-
-    private var cornerRadii: RectangleCornerRadii {
-        switch placement {
-        case .left:
-            return RectangleCornerRadii(
-                topLeading: 0,
-                bottomLeading: 0,
-                bottomTrailing: 11,
-                topTrailing: 11
-            )
-        case .right:
-            return RectangleCornerRadii(
-                topLeading: 11,
-                bottomLeading: 11,
-                bottomTrailing: 0,
-                topTrailing: 0
-            )
-        case .bottom:
-            return RectangleCornerRadii(
-                topLeading: 11,
-                bottomLeading: 0,
-                bottomTrailing: 0,
-                topTrailing: 11
-            )
-        }
+        .help(app.name)
     }
 }
 

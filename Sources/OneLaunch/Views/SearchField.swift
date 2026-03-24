@@ -22,7 +22,7 @@ struct SearchField: NSViewRepresentable {
         field.delegate = context.coordinator
         field.focusRingType = .none
         field.placeholderString = placeholder
-        field.font = .systemFont(ofSize: 22, weight: .medium)
+        field.font = .systemFont(ofSize: 18, weight: .regular)
         field.isBordered = false
         field.isBezeled = false
         field.drawsBackground = false
@@ -49,7 +49,7 @@ struct SearchField: NSViewRepresentable {
             string: placeholder,
             attributes: [
                 .foregroundColor: NSColor.white.withAlphaComponent(0.38),
-                .font: NSFont.systemFont(ofSize: 22, weight: .medium),
+                .font: NSFont.systemFont(ofSize: 18, weight: .regular),
             ]
         )
 
