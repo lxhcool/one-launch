@@ -4,7 +4,6 @@ import SwiftUI
 struct LauncherView: View {
     @ObservedObject var viewModel: LauncherViewModel
     @ObservedObject var settingsStore: SettingsStore
-    @ObservedObject private var iconProvider = AppIconProvider.shared
     let onClose: () -> Void
     @State private var gridFrames: [String: GridDropFrameEntry] = [:]
     @State private var draggingAppID: String?
@@ -77,6 +76,10 @@ struct LauncherView: View {
         settingsStore.backgroundIsDark ? .dark : .light
     }
 
+    private var headerElementsVisible: Bool {
+        settingsStore.showDateTime || settingsStore.showSearchBar
+    }
+
     private var pageTransitionAnimation: Animation {
         .timingCurve(0.22, 0.61, 0.36, 1, duration: 0.24)
     }
@@ -103,7 +106,9 @@ struct LauncherView: View {
                     }
 
                 VStack(spacing: 24) {
-                    header
+                    if headerElementsVisible {
+                        header
+                    }
 
                     content
                 }
@@ -281,30 +286,34 @@ struct LauncherView: View {
 
     private var header: some View {
         VStack(spacing: 18) {
-            // 时间日期显示
-            TimelineView(.periodic(from: .now, by: 60)) { context in
-                VStack(spacing: 6) {
-                    Text(context.date, format: .dateTime.hour().minute())
-                        .font(.system(size: 64, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            .linearGradient(
-                                colors: [.white, .white.opacity(0.85)],
-                                startPoint: .top,
-                                endPoint: .bottom
+            if settingsStore.showDateTime {
+                // 时间日期显示
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    VStack(spacing: 6) {
+                        Text(context.date, format: .dateTime.hour().minute())
+                            .font(.system(size: 64, weight: .bold, design: .rounded))
+                            .foregroundStyle(
+                                .linearGradient(
+                                    colors: [.white, .white.opacity(0.85)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
                             )
-                        )
-                        .shadow(color: Color.black.opacity(0.2), radius: 12, y: 3)
-                        .contentTransition(.numericText())
+                            .shadow(color: Color.black.opacity(0.2), radius: 12, y: 3)
+                            .contentTransition(.numericText())
 
-                    Text(context.date, format: .dateTime.weekday(.wide).month(.wide).day())
-                        .font(.system(size: 16, weight: .medium, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.55))
-                        .tracking(0.5)
+                        Text(context.date, format: .dateTime.weekday(.wide).month(.wide).day())
+                            .font(.system(size: 16, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.55))
+                            .tracking(0.5)
+                    }
                 }
+                .onTapGesture {}
             }
-            .onTapGesture {}
 
-            searchBar
+            if settingsStore.showSearchBar {
+                searchBar
+            }
         }
         .padding(.top, 16)
         .padding(.horizontal, 8)
@@ -317,7 +326,6 @@ struct LauncherView: View {
         HStack(spacing: 1) {
             ForEach(Array([
                 ("gearshape", { viewModel.showSettings.toggle() }, "设置"),
-                ("arrow.clockwise", { viewModel.refreshApplications() }, "重新扫描"),
                 ("xmark", { onClose() }, "关闭")
             ].enumerated()), id: \.offset) { index, item in
                 let (icon, action, help) = item
@@ -338,7 +346,7 @@ struct LauncherView: View {
                     }
                 }
 
-                if index < 2 {
+                if index < 1 {
                     Rectangle()
                         .fill(Color.white.opacity(0.10))
                         .frame(width: 0.5, height: 18)
@@ -367,7 +375,7 @@ struct LauncherView: View {
             ContentUnavailableView(
                 "没有找到应用",
                 systemImage: "magnifyingglass",
-                description: Text(viewModel.isRefreshing ? "正在扫描应用目录" : "换个关键词试试，或者重新扫描应用")
+                description: Text(viewModel.isRefreshing ? "正在扫描应用目录" : "换个关键词试试")
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -376,12 +384,12 @@ struct LauncherView: View {
                     ContentUnavailableView(
                         "该分类暂无应用",
                         systemImage: "square.grid.2x2",
-                        description: Text("试试切换到其他分类，或重新扫描应用列表")
+                        description: Text("试试切换到其他分类")
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     VStack(alignment: .leading, spacing: 12) {
-                        if !viewModel.pinnedApps.isEmpty {
+                        if settingsStore.showPinnedBar && !viewModel.pinnedApps.isEmpty {
                             pinnedAppsSection
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -390,10 +398,10 @@ struct LauncherView: View {
                             ContentUnavailableView(
                                 "该分类暂无应用",
                                 systemImage: "square.grid.2x2",
-                                description: Text("试试切换到其他分类，或重新扫描应用列表")
+                                description: Text("试试切换到其他分类")
                             )
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        } else {
+                        } else if headerElementsVisible {
                             ScrollView(.vertical, showsIndicators: false) {
                                 VStack(spacing: 0) {
                                     LazyVGrid(columns: columns, spacing: 22) {
@@ -425,9 +433,30 @@ struct LauncherView: View {
                                 }
                                 .frame(maxWidth: .infinity, alignment: .top)
                             }
+                            .onPreferenceChange(GridDropFramePreferenceKey.self) { entries in
+                                var frames: [String: GridDropFrameEntry] = [:]
+                                for entry in entries {
+                                    frames[entry.itemID] = entry
+                                }
+                                gridFrames = frames
+                            }
+                        } else {
+                            LazyVGrid(columns: columns, spacing: 22) {
+                                ForEach(viewModel.gridItems) { item in
+                                    switch item {
+                                    case let .app(app):
+                                        appGridItem(for: app)
+                                    case let .folder(folder):
+                                        folderGridItem(for: folder)
+                                    }
+                                }
+                            }
+                            .padding(.top, 8)
+                            .padding(.horizontal, 8)
+                            .padding(.bottom, 16)
                         }
                     }
-                    .frame(width: contentGeo.size.width, height: contentGeo.size.height, alignment: .topLeading)
+                    .frame(width: contentGeo.size.width, height: contentGeo.size.height, alignment: headerElementsVisible ? .topLeading : .center)
                 }
             }
         }
@@ -441,7 +470,7 @@ struct LauncherView: View {
                 ForEach(viewModel.pinnedApps) { app in
                     compactPinnedAppItem(for: app, iconSize: pinnedIconSize)
                         .contextMenu {
-                            customCategoryContextMenu(for: app)
+                            customAppContextMenu(for: app)
                         }
                 }
             }
@@ -460,7 +489,7 @@ struct LauncherView: View {
     }
 
     private func compactPinnedAppItem(for app: AppItem, iconSize: Double) -> some View {
-        PinnedAppButton(app: app, iconSize: iconSize, iconProvider: iconProvider) {
+        PinnedAppButton(app: app, iconSize: iconSize) {
             onClose()
             viewModel.launch(app)
         }
@@ -570,7 +599,7 @@ struct LauncherView: View {
         let isDragging = draggingAppID == app.id
         let isHoverTarget = hoverGroupTarget == .app(app.id)
 
-        return AppCardView(app: app, iconSize: effectiveIconSize) {
+        return AppCardView(app: app, iconSize: effectiveIconSize, showCardBorder: settingsStore.showAppCardBorder) {
             onClose()
             viewModel.launch(app)
         }
@@ -582,27 +611,19 @@ struct LauncherView: View {
         .animation(.spring(response: 0.25, dampingFraction: 0.75), value: isHoverTarget)
         .background(
             GeometryReader { geo in
-                Color.clear
-                    .onAppear {
-                        let frame = geo.frame(in: .named("launcherGridSpace"))
-                        gridFrames[app.id] = GridDropFrameEntry(
-                            itemID: app.id,
-                            target: .app(app.id),
-                            frame: frame
-                        )
-                    }
-                    .onChange(of: geo.frame(in: .named("launcherGridSpace"))) { _, newFrame in
-                        gridFrames[app.id] = GridDropFrameEntry(
-                            itemID: app.id,
-                            target: .app(app.id),
-                            frame: newFrame
-                        )
-                    }
+                Color.clear.preference(
+                    key: GridDropFramePreferenceKey.self,
+                    value: [GridDropFrameEntry(
+                        itemID: app.id,
+                        target: .app(app.id),
+                        frame: geo.frame(in: .named("launcherGridSpace"))
+                    )]
+                )
             }
         )
         .simultaneousGesture(dragGesture(for: app.id))
         .contextMenu {
-            customCategoryContextMenu(for: app)
+            customAppContextMenu(for: app)
         }
     }
 
@@ -646,22 +667,14 @@ struct LauncherView: View {
         .animation(.spring(response: 0.25, dampingFraction: 0.75), value: isHoverTarget)
         .background(
             GeometryReader { geo in
-                Color.clear
-                    .onAppear {
-                        let frame = geo.frame(in: .named("launcherGridSpace"))
-                        gridFrames[folderItemID] = GridDropFrameEntry(
-                            itemID: folderItemID,
-                            target: .folder(folder.id),
-                            frame: frame
-                        )
-                    }
-                    .onChange(of: geo.frame(in: .named("launcherGridSpace"))) { _, newFrame in
-                        gridFrames[folderItemID] = GridDropFrameEntry(
-                            itemID: folderItemID,
-                            target: .folder(folder.id),
-                            frame: newFrame
-                        )
-                    }
+                Color.clear.preference(
+                    key: GridDropFramePreferenceKey.self,
+                    value: [GridDropFrameEntry(
+                        itemID: folderItemID,
+                        target: .folder(folder.id),
+                        frame: geo.frame(in: .named("launcherGridSpace"))
+                    )]
+                )
             }
         )
         .simultaneousGesture(folderDragGesture(for: folder.id))
@@ -913,7 +926,7 @@ struct LauncherView: View {
     }
 
     private func folderAppCard(app: AppItem, folder: FolderDisplay) -> some View {
-        return AppCardView(app: app, iconSize: folderPanelIconSize) {
+        return AppCardView(app: app, iconSize: folderPanelIconSize, showCardBorder: settingsStore.showAppCardBorder) {
             commitFolderName(for: folder.id)
             dismissFolder()
             onClose()
@@ -922,21 +935,23 @@ struct LauncherView: View {
         .help("点击打开应用")
         .simultaneousGesture(folderAppDragGesture(appID: app.id, folderID: folder.id))
         .contextMenu {
-            customCategoryContextMenu(for: app)
+            customAppContextMenu(for: app)
         }
     }
 
     @ViewBuilder
-    private func customCategoryContextMenu(for app: AppItem) -> some View {
-        let isPinned = viewModel.isPinned(app.id)
+    private func customAppContextMenu(for app: AppItem) -> some View {
+        if settingsStore.showPinnedBar {
+            let isPinned = viewModel.isPinned(app.id)
 
-        Button {
-            viewModel.togglePinnedState(for: app.id)
-        } label: {
-            Label(isPinned ? "取消固定" : "固定", systemImage: isPinned ? "pin.slash" : "pin")
+            Button {
+                viewModel.togglePinnedState(for: app.id)
+            } label: {
+                Label(isPinned ? "取消固定" : "固定", systemImage: isPinned ? "pin.slash" : "pin")
+            }
+
+            Divider()
         }
-
-        Divider()
 
         // 文件夹菜单
         let existingFolders = viewModel.folderDisplays
@@ -1169,56 +1184,14 @@ struct LauncherView: View {
     private func searchResultRow(for app: AppItem, index: Int) -> some View {
         let isSelected = viewModel.searchSelectedIndex == index
 
-        return Button {
-            onClose()
-            viewModel.launch(app)
-        } label: {
-            HStack(spacing: 12) {
-                Image(nsImage: iconProvider.icon(for: app))
-                    .resizable()
-                    .frame(width: 36, height: 36)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(Color.white.opacity(isSelected ? 0.4 : 0), lineWidth: 2)
-                    )
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(app.name)
-                        .font(.system(size: 14, weight: isSelected ? .bold : .medium))
-
-                    Text(app.bundleIdentifier ?? app.url.lastPathComponent)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                if isSelected {
-                    Text("↵")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule()
-                                .fill(Color.white.opacity(0.2))
-                        )
-                }
+        return SearchResultRowView(
+            app: app,
+            isSelected: isSelected,
+            action: { [onClose, viewModel] in
+                onClose()
+                viewModel.launch(app)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isSelected ? Color.white.opacity(0.22) : Color.clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(isSelected ? Color.white.opacity(0.3) : Color.clear, lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
+        )
     }
 
 
@@ -1342,8 +1315,8 @@ struct LauncherView: View {
 private struct PinnedAppButton: View {
     let app: AppItem
     let iconSize: Double
-    @ObservedObject var iconProvider: AppIconProvider
     let action: () -> Void
+    @ObservedObject private var iconProvider = AppIconProvider.shared
     @State private var isHovered = false
 
     var body: some View {
@@ -1373,6 +1346,65 @@ private struct PinnedAppButton: View {
             isHovered = hovering
         }
         .help(app.name)
+    }
+}
+
+// MARK: - Search Result Row
+
+private struct SearchResultRowView: View {
+    let app: AppItem
+    let isSelected: Bool
+    let action: () -> Void
+    @ObservedObject private var iconProvider = AppIconProvider.shared
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(nsImage: iconProvider.icon(for: app))
+                    .resizable()
+                    .frame(width: 36, height: 36)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Color.white.opacity(isSelected ? 0.4 : 0), lineWidth: 2)
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(app.name)
+                        .font(.system(size: 14, weight: isSelected ? .bold : .medium))
+
+                    Text(app.bundleIdentifier ?? app.url.lastPathComponent)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                if isSelected {
+                    Text("↵")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(Color.white.opacity(0.2))
+                        )
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isSelected ? Color.white.opacity(0.22) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(isSelected ? Color.white.opacity(0.3) : Color.clear, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 

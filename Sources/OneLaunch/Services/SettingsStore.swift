@@ -27,6 +27,7 @@ final class SettingsStore: ObservableObject {
 
     private let defaults: UserDefaults
     private var backgroundSelectionTask: Task<Void, Never>?
+    private var backgroundReloadTask: Task<Void, Never>?
 
     private enum Key {
         static let iconSize = "settings.iconSize"
@@ -37,6 +38,10 @@ final class SettingsStore: ObservableObject {
         static let manualAppOrder = "settings.manualAppOrder"
         static let pinnedAppIDs = "settings.pinnedAppIDs"
         static let appFolders = "settings.appFolders"
+        static let showPinnedBar = "settings.showPinnedBar"
+        static let showAppCardBorder = "settings.showAppCardBorder"
+        static let showDateTime = "settings.showDateTime"
+        static let showSearchBar = "settings.showSearchBar"
     }
 
     @Published var iconSize: Double {
@@ -60,12 +65,6 @@ final class SettingsStore: ObservableObject {
 
     @Published var backgroundBlurRadius: Double {
         didSet {
-            let clamped = min(36, max(0, backgroundBlurRadius))
-            if clamped != backgroundBlurRadius {
-                backgroundBlurRadius = clamped
-                return
-            }
-
             defaults.set(backgroundBlurRadius, forKey: Key.backgroundBlurRadius)
             if backgroundImagePath != nil {
                 reloadBackgroundImage()
@@ -83,12 +82,6 @@ final class SettingsStore: ObservableObject {
 
     @Published var pinnedAppIDs: [String] {
         didSet {
-            let normalized = Self.normalizePinnedAppIDs(pinnedAppIDs)
-            if normalized != pinnedAppIDs {
-                pinnedAppIDs = normalized
-                return
-            }
-
             if pinnedAppIDs.isEmpty {
                 defaults.removeObject(forKey: Key.pinnedAppIDs)
             } else {
@@ -111,6 +104,22 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    @Published var showPinnedBar: Bool {
+        didSet { defaults.set(showPinnedBar, forKey: Key.showPinnedBar) }
+    }
+
+    @Published var showAppCardBorder: Bool {
+        didSet { defaults.set(showAppCardBorder, forKey: Key.showAppCardBorder) }
+    }
+
+    @Published var showDateTime: Bool {
+        didSet { defaults.set(showDateTime, forKey: Key.showDateTime) }
+    }
+
+    @Published var showSearchBar: Bool {
+        didSet { defaults.set(showSearchBar, forKey: Key.showSearchBar) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
 
@@ -130,6 +139,10 @@ final class SettingsStore: ObservableObject {
         self.pinnedAppIDs = Self.normalizePinnedAppIDs(defaults.stringArray(forKey: Key.pinnedAppIDs) ?? [])
         self.appFolders = Self.loadFolders(from: defaults)
         self.launchAtLogin = SMAppService.mainApp.status == .enabled
+        self.showPinnedBar = defaults.object(forKey: Key.showPinnedBar) as? Bool ?? true
+        self.showAppCardBorder = defaults.object(forKey: Key.showAppCardBorder) as? Bool ?? true
+        self.showDateTime = defaults.object(forKey: Key.showDateTime) as? Bool ?? true
+        self.showSearchBar = defaults.object(forKey: Key.showSearchBar) as? Bool ?? true
         reloadBackgroundImage()
 
         // 稳定策略：仅使用 OneLaunch 自己维护的文件夹。
@@ -148,6 +161,10 @@ final class SettingsStore: ObservableObject {
         manualAppOrder = []
         pinnedAppIDs = []
         appFolders = []
+        showPinnedBar = true
+        showAppCardBorder = true
+        showDateTime = true
+        showSearchBar = true
     }
 
     func isAppPinned(_ appID: String) -> Bool {
@@ -165,7 +182,7 @@ final class SettingsStore: ObservableObject {
             updated.append(normalizedAppID)
         }
 
-        pinnedAppIDs = updated
+        pinnedAppIDs = Self.normalizePinnedAppIDs(updated)
     }
 
     func setBackgroundImage(from sourceURL: URL) {
@@ -204,6 +221,8 @@ final class SettingsStore: ObservableObject {
     }
 
     private func reloadBackgroundImage() {
+        backgroundReloadTask?.cancel()
+
         guard let path = backgroundImagePath else {
             backgroundImage = nil
             backgroundBlurImage = nil
@@ -211,26 +230,43 @@ final class SettingsStore: ObservableObject {
             return
         }
 
+        let blurRadius = backgroundBlurRadius
         let screenSize = NSScreen.main?.frame.size ?? NSSize(width: 1920, height: 1080)
         let screenScale = min(NSScreen.main?.backingScaleFactor ?? 2, 1.5)
-        if let rendered = Self.loadOptimizedBackgroundImages(
-            atPath: path,
-            screenSize: screenSize,
-            screenScale: screenScale,
-            blurRadius: backgroundBlurRadius
-        ) {
-            backgroundImage = rendered.base
-            backgroundBlurImage = rendered.blur
-            backgroundIsDark = rendered.isDark
-            return
-        }
 
-        backgroundImage = NSImage(contentsOfFile: path)
-        backgroundBlurImage = nil
-        if let cgImage = backgroundImage?.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-            backgroundIsDark = Self.isImageDark(cgImage: cgImage)
-        } else {
-            backgroundIsDark = true
+        backgroundReloadTask = Task { @MainActor in
+            let rendered = await Task.detached(priority: .userInitiated) {
+                Self.loadOptimizedBackgroundImages(
+                    atPath: path,
+                    screenSize: screenSize,
+                    screenScale: screenScale,
+                    blurRadius: blurRadius
+                )
+            }.value
+
+            guard !Task.isCancelled else { return }
+
+            if let rendered {
+                backgroundImage = rendered.base
+                backgroundBlurImage = rendered.blur
+                backgroundIsDark = rendered.isDark
+            } else {
+                let fallback = await Task.detached(priority: .userInitiated) {
+                    let baseImage = NSImage(contentsOfFile: path)
+                    let isDark: Bool
+                    if let cgImage = baseImage?.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                        isDark = Self.isImageDark(cgImage: cgImage)
+                    } else {
+                        isDark = true
+                    }
+                    return (image: baseImage, isDark: isDark)
+                }.value
+
+                guard !Task.isCancelled else { return }
+                backgroundImage = fallback.image
+                backgroundBlurImage = nil
+                backgroundIsDark = fallback.isDark
+            }
         }
     }
 

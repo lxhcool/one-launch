@@ -3,6 +3,7 @@ import SwiftUI
 struct AppCardView: View {
     let app: AppItem
     let iconSize: Double
+    let showCardBorder: Bool
     let action: () -> Void
 
     @State private var isHovered = false
@@ -27,15 +28,17 @@ struct AppCardView: View {
     var body: some View {
         VStack(spacing: 8) {
             ZStack {
-                // 常驻卡片底座 — 类似 iPadOS 图标卡片
-                RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                    .fill(Color.white.opacity(isHovered ? 0.14 : 0.08))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                            .stroke(Color.white.opacity(isHovered ? 0.18 : 0.06), lineWidth: 0.5)
-                    )
-                    .shadow(color: Color.black.opacity(0.06), radius: 2, y: 1)
-                    .shadow(color: Color.black.opacity(isHovered ? 0.16 : 0), radius: isHovered ? 12 : 0, y: isHovered ? 5 : 0)
+                if showCardBorder {
+                    // 常驻卡片底座 — 类似 iPadOS 图标卡片
+                    RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
+                        .fill(Color.white.opacity(isHovered ? 0.14 : 0.08))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
+                                .stroke(Color.white.opacity(isHovered ? 0.18 : 0.06), lineWidth: 0.5)
+                        )
+                        .shadow(color: Color.black.opacity(0.06), radius: 2, y: 1)
+                        .shadow(color: Color.black.opacity(isHovered ? 0.16 : 0), radius: isHovered ? 12 : 0, y: isHovered ? 5 : 0)
+                }
 
                 Image(nsImage: iconProvider.icon(for: app))
                     .resizable()
@@ -45,6 +48,7 @@ struct AppCardView: View {
             }
             .frame(width: cardTotalSize, height: cardTotalSize)
             .scaleEffect(isHovered ? 1.06 : 1)
+            .shadow(color: .black.opacity(showCardBorder ? 0 : (isHovered ? 0.2 : 0.08)), radius: showCardBorder ? 0 : (isHovered ? 8 : 3), y: showCardBorder ? 0 : (isHovered ? 3 : 1))
 
             Text(app.name)
                 .font(.system(size: 11, weight: isHovered ? .medium : .regular))

@@ -9,12 +9,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKeyService: HotKeyService?
     private var launchPrewarmWorkItem: DispatchWorkItem?
     private var handledInitialActivation = false
+    private let directoryWatcher = AppDirectoryWatcher()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         configureMainMenu()
         configureStatusItem()
         configureHotKey()
         scheduleDeferredPrewarm()
+        startDirectoryWatching()
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -126,5 +128,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         launchPrewarmWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: workItem)
+    }
+
+    /// 启动目录监听，安装/卸载应用后自动刷新列表
+    private func startDirectoryWatching() {
+        directoryWatcher.start { [weak self] in
+            self?.launcherPanelController.viewModel.silentRefreshApplications()
+        }
     }
 }

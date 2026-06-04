@@ -216,6 +216,42 @@ struct SettingsView: View {
                     .menuStyle(.button)
                     .buttonStyle(.plain)
                 }
+
+                Divider().overlay(Color.white.opacity(0.06))
+
+                // Pinned Bar
+                SettingsRow(icon: "pin", title: "固定栏") {
+                    Toggle("", isOn: $settingsStore.showPinnedBar)
+                        .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                        .labelsHidden()
+                }
+
+                Divider().overlay(Color.white.opacity(0.06))
+
+                // App Card Border
+                SettingsRow(icon: "rectangle.3.group", title: "应用卡片") {
+                    Toggle("", isOn: $settingsStore.showAppCardBorder)
+                        .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                        .labelsHidden()
+                }
+
+                Divider().overlay(Color.white.opacity(0.06))
+
+                // Date/Time
+                SettingsRow(icon: "clock", title: "日期时间") {
+                    Toggle("", isOn: $settingsStore.showDateTime)
+                        .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                        .labelsHidden()
+                }
+
+                Divider().overlay(Color.white.opacity(0.06))
+
+                // Search Bar
+                SettingsRow(icon: "magnifyingglass", title: "搜索栏") {
+                    Toggle("", isOn: $settingsStore.showSearchBar)
+                        .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                        .labelsHidden()
+                }
             }
         }
     }

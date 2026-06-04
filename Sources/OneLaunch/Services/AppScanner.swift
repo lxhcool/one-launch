@@ -52,14 +52,7 @@ struct AppScanner {
         let apps = entries.compactMap { entry -> AppItem? in
             let url = URL(fileURLWithPath: entry.path)
             guard FileManager.default.fileExists(atPath: entry.path) else { return nil }
-            let lsCategoryType = Bundle(url: url)?.object(forInfoDictionaryKey: "LSApplicationCategoryType") as? String
-            let fallbackCategory = AppCategory.resolve(
-                name: entry.name,
-                bundleIdentifier: entry.bundleIdentifier,
-                lsCategoryType: lsCategoryType
-            )
-            let category = entry.category.flatMap(AppCategory.init(rawValue:)) ?? fallbackCategory
-            return AppItem(url: url, name: entry.name, bundleIdentifier: entry.bundleIdentifier, category: category)
+            return AppItem(url: url, name: entry.name, bundleIdentifier: entry.bundleIdentifier)
         }
 
         guard !apps.isEmpty else { return nil }
@@ -76,8 +69,7 @@ struct AppScanner {
             CachedApp(
                 path: $0.url.path,
                 name: $0.name,
-                bundleIdentifier: $0.bundleIdentifier,
-                category: $0.category.rawValue
+                bundleIdentifier: $0.bundleIdentifier
             )
         }
         if let data = try? JSONEncoder().encode(entries) {
@@ -102,14 +94,11 @@ struct AppScanner {
         let fallbackName = bundle?.object(forInfoDictionaryKey: kCFBundleNameKey as String) as? String
         let name = bundleName ?? fallbackName ?? localizedName.replacingOccurrences(of: ".app", with: "")
         let bundleIdentifier = bundle?.bundleIdentifier
-        let lsCategoryType = bundle?.object(forInfoDictionaryKey: "LSApplicationCategoryType") as? String
-        let category = AppCategory.resolve(name: name, bundleIdentifier: bundleIdentifier, lsCategoryType: lsCategoryType)
 
         return AppItem(
             url: url,
             name: name,
-            bundleIdentifier: bundleIdentifier,
-            category: category
+            bundleIdentifier: bundleIdentifier
         )
     }
 }
@@ -118,5 +107,4 @@ private struct CachedApp: Codable {
     let path: String
     let name: String
     let bundleIdentifier: String?
-    let category: String?
 }

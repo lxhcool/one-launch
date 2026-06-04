@@ -30,6 +30,15 @@ enum LauncherGridItem: Identifiable, Hashable {
     }
 }
 
+/// 一次性承载所有网格缓存，减少 @Published 触发次数
+struct GridCache {
+    var filteredApps: [AppItem] = []
+    var gridApps: [AppItem] = []
+    var pinnedApps: [AppItem] = []
+    var folderDisplays: [FolderDisplay] = []
+    var gridItems: [LauncherGridItem] = []
+}
+
 @MainActor
 final class LauncherViewModel: ObservableObject {
     @Published var isPresented = false
@@ -53,11 +62,7 @@ final class LauncherViewModel: ObservableObject {
     @Published private(set) var isRefreshing = false
     @Published var shouldFocusSearchField = false
     @Published var showSettings = false
-    @Published private(set) var filteredAppsCache: [AppItem] = []
-    @Published private(set) var gridAppsCache: [AppItem] = []
-    @Published private(set) var pinnedAppsCache: [AppItem] = []
-    @Published private(set) var folderDisplaysCache: [FolderDisplay] = []
-    @Published private(set) var gridItemsCache: [LauncherGridItem] = []
+    @Published private(set) var gridCache = GridCache()
     @Published var activeFolderID: String?
     @Published var currentPage = 0
     @Published var searchSelectedIndex: Int = 0
@@ -88,7 +93,8 @@ final class LauncherViewModel: ObservableObject {
             .dropFirst()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                self?.rebuildGridCaches()
+                guard let self else { return }
+                self.gridCache = self.buildGridCache(gridApps: self.gridCache.gridApps, filteredApps: self.gridCache.filteredApps)
             }
             .store(in: &cancellables)
 
@@ -96,14 +102,17 @@ final class LauncherViewModel: ObservableObject {
             .dropFirst()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                self?.rebuildGridCaches()
+                guard let self else { return }
+                self.gridCache = self.buildGridCache(gridApps: self.gridCache.gridApps, filteredApps: self.gridCache.filteredApps)
             }
             .store(in: &cancellables)
     }
 
-    var filteredApps: [AppItem] {
-        filteredAppsCache
-    }
+    var filteredApps: [AppItem] { gridCache.filteredApps }
+    var gridApps: [AppItem] { gridCache.gridApps }
+    var folderDisplays: [FolderDisplay] { gridCache.folderDisplays }
+    var pinnedApps: [AppItem] { gridCache.pinnedApps }
+    var gridItems: [LauncherGridItem] { gridCache.gridItems }
 
     var isSearching: Bool {
         !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -113,29 +122,12 @@ final class LauncherViewModel: ObservableObject {
         guard isSearching else {
             return nil
         }
-        return filteredAppsCache.first
+        return gridCache.filteredApps.first
     }
 
     var searchResults: [AppItem] {
         guard isSearching else { return [] }
-        return Array(filteredAppsCache.prefix(maxSearchResults))
-    }
-
-    var gridApps: [AppItem] {
-        // 搜索时主网格仍显示全部应用（不被过滤），但保持当前排序方式。
-        gridAppsCache
-    }
-
-    var folderDisplays: [FolderDisplay] {
-        folderDisplaysCache
-    }
-
-    var pinnedApps: [AppItem] {
-        pinnedAppsCache
-    }
-
-    var gridItems: [LauncherGridItem] {
-        gridItemsCache
+        return Array(gridCache.filteredApps.prefix(maxSearchResults))
     }
 
     var totalPages: Int {
@@ -162,7 +154,7 @@ final class LauncherViewModel: ObservableObject {
         if !isSearching {
             return "\(settingsStore.sortMode.displayName)，共 \(apps.count) 个应用"
         }
-        return "搜索结果 \(filteredAppsCache.count) 个"
+        return "搜索结果 \(gridCache.filteredApps.count) 个"
     }
 
     private var searchDebounceTask: Task<Void, Never>?
@@ -178,20 +170,17 @@ final class LauncherViewModel: ObservableObject {
         searchDebounceTask?.cancel()
 
         // 仅在首屏/数据源发生明显变化时先用原始列表兜底，避免拖拽排序时先闪回原始顺序。
-        // 搜索清空时不再立即重置，保持当前结果显示，等待异步计算完成后再更新
         let shouldPrimeVisibleApps = !hasQuery
             && !appsCopy.isEmpty
-            && filteredAppsCache.isEmpty
-            && (sortMode != .manual && filteredAppsCache.count != appsCopy.count)
+            && gridCache.filteredApps.isEmpty
+            && (sortMode != .manual && gridCache.filteredApps.count != appsCopy.count)
 
         if shouldPrimeVisibleApps {
-            filteredAppsCache = appsCopy
-            gridAppsCache = appsCopy
-            rebuildGridCaches()
+            gridCache = buildGridCache(gridApps: appsCopy, filteredApps: appsCopy)
         }
 
         // 搜索时使用防抖，减少频繁计算
-        let debounceInterval: TimeInterval = hasQuery ? 0.05 : 0
+        let debounceInterval: TimeInterval = hasQuery ? 0.15 : 0
 
         searchDebounceTask = Task { [weak self] in
             if debounceInterval > 0 {
@@ -199,43 +188,47 @@ final class LauncherViewModel: ObservableObject {
             }
             guard let self, !Task.isCancelled else { return }
 
-            let result = await Task.detached(priority: .userInitiated) {
+            // 在后台线程计算搜索和排序结果（使用缓存的 store 避免重复读 UserDefaults）
+            let result = await Task.detached(priority: .userInitiated) { [store = self.recentAppsStore] in
                 let filtered = LauncherViewModel.computeFilteredApps(
                     apps: appsCopy,
                     query: queryCopy,
                     sortMode: sortMode,
-                    manualOrder: manualOrder
+                    manualOrder: manualOrder,
+                    store: store
                 )
-                let grid = hasQuery
-                    ? LauncherViewModel.computeFilteredApps(
+                let grid: [AppItem]
+                if hasQuery {
+                    grid = LauncherViewModel.computeFilteredApps(
                         apps: appsCopy,
                         query: "",
                         sortMode: sortMode,
-                        manualOrder: manualOrder
+                        manualOrder: manualOrder,
+                        store: store
                     )
-                    : filtered
+                } else {
+                    grid = filtered
+                }
                 return (filtered: filtered, grid: grid)
             }.value
 
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard self.apps == appsCopy && self.query == queryCopy else { return }
-                self.filteredAppsCache = result.filtered
-                self.gridAppsCache = result.grid
-                self.rebuildGridCaches()
+                self.gridCache = self.buildGridCache(gridApps: result.grid, filteredApps: result.filtered)
             }
         }
     }
 
-    private func rebuildGridCaches() {
-        let apps = gridApps
+    /// 构建完整的网格缓存，单次 @Published 赋值
+    private func buildGridCache(gridApps: [AppItem], filteredApps: [AppItem]) -> GridCache {
         let pinnedIDs = Set(settingsStore.pinnedAppIDs)
         let appByID = Dictionary(
             gridApps.map { ($0.id, $0) },
             uniquingKeysWith: { existing, _ in existing }
         )
         let pinnedApps = settingsStore.pinnedAppIDs.compactMap { appByID[$0] }
-        let scrollableApps = apps.filter { !pinnedIDs.contains($0.id) }
+        let scrollableApps = gridApps.filter { !pinnedIDs.contains($0.id) }
         let displays = resolveFolders(for: scrollableApps)
 
         let folderMap = Dictionary(
@@ -258,11 +251,7 @@ final class LauncherViewModel: ObservableObject {
             }
         }
 
-        pinnedAppsCache = pinnedApps
-        folderDisplaysCache = displays
-        gridItemsCache = items
-
-        let maxPage = max(0, totalPages - 1)
+        let maxPage = max(0, (items.count + itemsPerPage - 1) / itemsPerPage - 1)
         if currentPage > maxPage {
             currentPage = maxPage
         }
@@ -270,12 +259,19 @@ final class LauncherViewModel: ObservableObject {
         if let activeFolderID, !displays.contains(where: { $0.id == activeFolderID }) {
             self.activeFolderID = nil
         }
+
+        return GridCache(
+            filteredApps: filteredApps,
+            gridApps: gridApps,
+            pinnedApps: pinnedApps,
+            folderDisplays: displays,
+            gridItems: items
+        )
     }
 
     /// 在后台线程执行，用于避免主线程卡顿（UserDefaults 读取 + 排序）
-    private nonisolated static func computeFilteredApps(apps: [AppItem], query: String, sortMode: SortMode, manualOrder: [String]) -> [AppItem] {
+    private nonisolated static func computeFilteredApps(apps: [AppItem], query: String, sortMode: SortMode, manualOrder: [String], store: RecentAppsStore) -> [AppItem] {
         let hasQuery = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let store = RecentAppsStore()
 
         let ranked = apps.compactMap { app -> (app: AppItem, score: Int, recency: TimeInterval, count: Int)? in
             let recency = store.lastLaunchTimestamp(for: app)
@@ -382,6 +378,31 @@ final class LauncherViewModel: ObservableObject {
             apps = scannedApps
             AppIconProvider.shared.preload(apps: scannedApps, limit: 80)
             isRefreshing = false
+        }
+    }
+
+    /// 静默刷新：不显示加载状态，仅在应用列表实际变化时才更新 UI
+    func silentRefreshApplications() {
+        guard !isRefreshing else { return }
+
+        isRefreshing = true
+
+        Task {
+            let scannedApps = await Task.detached(priority: .background) {
+                AppScanner().scanApplications()
+            }.value
+
+            // 仅在列表真正发生变化时才更新，避免不必要的 UI 重建
+            let oldIDs = Set(self.apps.map(\.id))
+            let newIDs = Set(scannedApps.map(\.id))
+            let changed = oldIDs != newIDs
+
+            if changed {
+                self.apps = scannedApps
+                AppIconProvider.shared.preload(apps: scannedApps, limit: 80)
+            }
+
+            self.isRefreshing = false
         }
     }
 
@@ -682,9 +703,7 @@ final class LauncherViewModel: ObservableObject {
         let sorted = orderedApps + remainingApps.sorted {
             $0.name.localizedStandardCompare($1.name) == .orderedAscending
         }
-        filteredAppsCache = sorted
-        gridAppsCache = sorted
-        rebuildGridCaches()
+        gridCache = buildGridCache(gridApps: sorted, filteredApps: sorted)
     }
 
     func resolveFolders(for visibleApps: [AppItem]) -> [FolderDisplay] {
