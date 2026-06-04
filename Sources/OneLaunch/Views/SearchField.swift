@@ -39,7 +39,10 @@ struct SearchField: NSViewRepresentable {
     func updateNSView(_ nsView: CenteringView, context: Context) {
         guard let field = nsView.textField else { return }
 
-        if field.stringValue != text {
+        // 输入法组合期间不覆盖 NSTextField 内容，让 IME 完全控制显示
+        let isComposing = (field.currentEditor() as? NSTextView)?.hasMarkedText() ?? false
+
+        if !isComposing && field.stringValue != text {
             field.stringValue = text
         }
 
@@ -81,17 +84,24 @@ struct SearchField: NSViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, NSTextFieldDelegate {
         private let parent: SearchField
+        private weak var textField: NSTextField?
+        private var textUpdateTask: Task<Void, Never>?
 
         init(parent: SearchField) {
             self.parent = parent
         }
 
         func controlTextDidChange(_ notification: Notification) {
-            guard let textField = notification.object as? NSTextField else {
-                return
-            }
+            guard let tf = notification.object as? NSTextField else { return }
+            self.textField = tf
 
-            parent.text = textField.stringValue
+            textUpdateTask?.cancel()
+            textUpdateTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 30_000_000)
+                guard let self, !Task.isCancelled, let tf = self.textField else { return }
+                let editor = tf.currentEditor() as? NSTextView
+                self.parent.text = editor?.string ?? tf.stringValue
+            }
         }
 
         func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {

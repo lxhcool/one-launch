@@ -167,23 +167,20 @@ final class LauncherViewModel: ObservableObject {
         // 取消之前的搜索任务
         searchDebounceTask?.cancel()
 
-        // 仅在首屏/数据源发生明显变化时先用原始列表兜底，避免拖拽排序时先闪回原始顺序。
-        let shouldPrimeVisibleApps = !hasQuery
-            && !appsCopy.isEmpty
-            && gridCache.filteredApps.isEmpty
-            && (sortMode != .manual && gridCache.filteredApps.count != appsCopy.count)
-
-        if shouldPrimeVisibleApps {
-            gridCache = buildGridCache(gridApps: appsCopy, filteredApps: appsCopy)
+        // 清空搜索时同步计算，避免异步 context switch 导致的列表闪现
+        if !hasQuery {
+            let filtered = LauncherViewModel.computeFilteredApps(
+                apps: appsCopy, query: "", sortMode: sortMode, manualOrder: manualOrder, store: recentAppsStore
+            )
+            gridCache = buildGridCache(gridApps: filtered, filteredApps: filtered)
+            return
         }
 
-        // 搜索时使用防抖，减少频繁计算
-        let debounceInterval: TimeInterval = hasQuery ? 0.15 : 0
+        // 清空旧搜索结果，防止异步计算完成前用旧数据渲染
+        gridCache.filteredApps = []
 
+        // SearchField 已做 30ms 合并，这里直接异步计算搜索
         searchDebounceTask = Task { [weak self] in
-            if debounceInterval > 0 {
-                try? await Task.sleep(nanoseconds: UInt64(debounceInterval * 1_000_000_000))
-            }
             guard let self, !Task.isCancelled else { return }
 
             // 在后台线程计算搜索和排序结果（使用缓存的 store 避免重复读 UserDefaults）

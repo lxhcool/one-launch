@@ -1,47 +1,59 @@
 import Foundation
 
 enum SearchScorer {
+    /// 纯前缀匹配：仅从名称开头或单词开头匹配，不做中间子串匹配。
+    /// 中文应用名自动转拼音，支持用字母搜索中文应用。
     static func score(app: AppItem, query: String) -> Int? {
         let normalizedQuery = normalize(query)
+        guard !normalizedQuery.isEmpty else { return 0 }
 
-        guard !normalizedQuery.isEmpty else {
-            return 0
+        let name = normalize(app.name)
+        var candidates = [name]
+
+        // 拼音候选：中文名转拼音，便于用字母搜索
+        if let pinyin = pinyinVariants(for: app.name) {
+            for v in pinyin where v != name && !candidates.contains(v) {
+                candidates.append(v)
+            }
         }
 
-        let candidates = [
-            normalize(app.name)
-        ].filter { !$0.isEmpty }
-
         var bestScore: Int?
-
         for candidate in candidates {
+            // 精确匹配
             if candidate == normalizedQuery {
                 bestScore = max(bestScore ?? .min, 1_500)
             }
-
+            // 前缀匹配
             if candidate.hasPrefix(normalizedQuery) {
                 bestScore = max(bestScore ?? .min, 1_300 - min(candidate.count, 120))
             }
-
-            if words(in: candidate).contains(where: { $0.hasPrefix(normalizedQuery) }) {
+            // 单词前缀匹配
+            for word in words(in: candidate) where word.hasPrefix(normalizedQuery) {
                 bestScore = max(bestScore ?? .min, 1_100)
             }
-
-            if candidate.contains(normalizedQuery) {
-                bestScore = max(bestScore ?? .min, 900)
-            }
-
+            // 首字母缩写前缀
             if acronym(of: candidate).hasPrefix(normalizedQuery) {
                 bestScore = max(bestScore ?? .min, 1_000)
             }
-
-            if let fuzzyScore = fuzzySequentialScore(query: normalizedQuery, candidate: candidate) {
-                bestScore = max(bestScore ?? .min, fuzzyScore)
-            }
         }
-
         return bestScore
     }
+
+    // MARK: - Pinyin
+
+    /// 返回拼音候选数组：["wenbenbianji", "wen ben bian ji"]，英文名返回 nil
+    private static func pinyinVariants(for input: String) -> [String]? {
+        let mutable = NSMutableString(string: input)
+        guard CFStringTransform(mutable, nil, kCFStringTransformToLatin, false) else { return nil }
+        guard CFStringTransform(mutable, nil, kCFStringTransformStripDiacritics, false) else { return nil }
+        let pinyin = (mutable as String).lowercased()
+        let noSpaces = pinyin.replacingOccurrences(of: " ", with: "")
+        // 只有含中文时拼音才和原名不同
+        guard noSpaces != normalize(input) else { return nil }
+        return [noSpaces, pinyin]
+    }
+
+    // MARK: - Helpers
 
     private static func normalize(_ input: String) -> String {
         input
@@ -61,35 +73,5 @@ enum SearchScorer {
             .compactMap { $0.first }
             .map(String.init)
             .joined()
-    }
-
-    private static func fuzzySequentialScore(query: String, candidate: String) -> Int? {
-        guard query.count <= candidate.count else {
-            return nil
-        }
-
-        var currentIndex = candidate.startIndex
-        var score = 700
-        var previousMatchIndex: String.Index?
-
-        for character in query {
-            guard let matchIndex = candidate[currentIndex...].firstIndex(of: character) else {
-                return nil
-            }
-
-            if let previousMatchIndex {
-                let gap = candidate.distance(from: previousMatchIndex, to: matchIndex) - 1
-                score -= max(gap * 8, 0)
-            }
-
-            if matchIndex == candidate.startIndex || !candidate[candidate.index(before: matchIndex)].isLetter {
-                score += 30
-            }
-
-            previousMatchIndex = matchIndex
-            currentIndex = candidate.index(after: matchIndex)
-        }
-
-        return max(score, 0)
     }
 }

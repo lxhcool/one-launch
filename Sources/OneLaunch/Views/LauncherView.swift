@@ -123,7 +123,7 @@ struct LauncherView: View {
                     searchResultsPanel
                         .position(
                             x: geometry.size.width / 2,
-                            y: max(geometry.safeAreaInsets.top + 16, 32) + 16 + 80 + 20 + 52 + 16 + 180
+                            y: max(geometry.safeAreaInsets.top + 16, 32) + 16 + 80 + 20 + 52 + 16 + 180 + 12
                         )
                         .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
                         .animation(.easeOut(duration: 0.2), value: viewModel.isSearching)
@@ -1136,13 +1136,22 @@ struct LauncherView: View {
     private var searchResultsPanel: some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 2) {
+                VStack(spacing: 4) {
                     ForEach(Array(viewModel.searchResults.enumerated()), id: \.element.id) { index, app in
                         searchResultRow(for: app, index: index)
                             .id("row-\(index)")
                     }
                 }
                 .padding(6)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(.thinMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .stroke(Color.white.opacity(0.10), lineWidth: 0.5)
+                        )
+                )
             }
             .onChange(of: viewModel.searchSelectedIndex) { _, newIndex in
                 withAnimation(.easeOut(duration: 0.15)) {
@@ -1150,18 +1159,11 @@ struct LauncherView: View {
                 }
             }
         }
-        .frame(width: 500)
+        .frame(width: 460)
         .frame(maxHeight: 360)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.thinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(Color.white.opacity(0.10), lineWidth: 0.5)
-                )
-                .shadow(color: Color.black.opacity(0.10), radius: 4, y: 2)
-                .shadow(color: Color.black.opacity(0.18), radius: 24, y: 12)
-        )
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .shadow(color: Color.black.opacity(0.10), radius: 4, y: 2)
+        .shadow(color: Color.black.opacity(0.18), radius: 24, y: 12)
     }
 
     private func searchResultRow(for app: AppItem, index: Int) -> some View {
@@ -1342,6 +1344,7 @@ private struct SearchResultRowView: View {
     let isSelected: Bool
     let action: () -> Void
     @State private var iconVersion = 0
+    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
@@ -1358,12 +1361,6 @@ private struct SearchResultRowView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(app.name)
                         .font(.system(size: 14, weight: isSelected ? .bold : .medium))
-
-                    Text(app.bundleIdentifier ?? app.url.lastPathComponent)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -1382,15 +1379,17 @@ private struct SearchResultRowView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isSelected ? Color.white.opacity(0.22) : Color.clear)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(isSelected ? Color.white.opacity(0.22) : isHovered ? Color.white.opacity(0.08) : Color.clear)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .stroke(isSelected ? Color.white.opacity(0.3) : Color.clear, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
         .onReceive(AppIconProvider.shared.loadedPublisher(for: app.url.path)) { _ in
             iconVersion &+= 1
         }
