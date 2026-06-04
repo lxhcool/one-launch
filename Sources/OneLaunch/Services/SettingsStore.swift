@@ -28,6 +28,7 @@ final class SettingsStore: ObservableObject {
     private let defaults: UserDefaults
     private var backgroundSelectionTask: Task<Void, Never>?
     private var backgroundReloadTask: Task<Void, Never>?
+    private var blurDebounceTask: Task<Void, Never>?
 
     private enum Key {
         static let iconSize = "settings.iconSize"
@@ -66,9 +67,7 @@ final class SettingsStore: ObservableObject {
     @Published var backgroundBlurRadius: Double {
         didSet {
             defaults.set(backgroundBlurRadius, forKey: Key.backgroundBlurRadius)
-            if backgroundImagePath != nil {
-                reloadBackgroundImage()
-            }
+            scheduleBlurReload()
         }
     }
 
@@ -218,6 +217,16 @@ final class SettingsStore: ObservableObject {
         let oldPath = backgroundImagePath
         backgroundImagePath = nil
         deleteManagedBackgroundIfNeeded(at: oldPath)
+    }
+
+    private func scheduleBlurReload() {
+        blurDebounceTask?.cancel()
+        guard backgroundImagePath != nil else { return }
+        blurDebounceTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            reloadBackgroundImage()
+        }
     }
 
     private func reloadBackgroundImage() {

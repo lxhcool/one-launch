@@ -7,7 +7,7 @@ struct AppCardView: View {
     let action: () -> Void
 
     @State private var isHovered = false
-    @ObservedObject private var iconProvider = AppIconProvider.shared
+    @State private var iconVersion = 0
 
     private var iconCornerRadius: Double {
         iconSize * 0.22
@@ -40,7 +40,7 @@ struct AppCardView: View {
                         .shadow(color: Color.black.opacity(isHovered ? 0.16 : 0), radius: isHovered ? 12 : 0, y: isHovered ? 5 : 0)
                 }
 
-                Image(nsImage: iconProvider.icon(for: app))
+                Image(nsImage: AppIconProvider.shared.icon(for: app))
                     .resizable()
                     .interpolation(.high)
                     .frame(width: iconSize, height: iconSize)
@@ -68,5 +68,8 @@ struct AppCardView: View {
             }
         }
         .help(app.bundleIdentifier ?? app.url.path)
+        .onReceive(AppIconProvider.shared.loadedPublisher(for: app.url.path)) { _ in
+            iconVersion &+= 1
+        }
     }
 }

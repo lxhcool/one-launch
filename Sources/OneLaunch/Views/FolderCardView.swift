@@ -10,7 +10,7 @@ struct FolderCardView: View {
     let onLaunchApp: (AppItem) -> Void
 
     @State private var isHovered = false
-    @ObservedObject private var iconProvider = AppIconProvider.shared
+    @State private var iconVersion = 0
 
     private var useLargeGrid: Bool { apps.count >= 9 }
     private var gridColumns: Int { useLargeGrid ? 3 : 2 }
@@ -90,6 +90,9 @@ struct FolderCardView: View {
             }
         }
         .help(apps.map(\.name).joined(separator: "\n"))
+        .onReceive(AppIconProvider.shared.anyLoadedPublisher(for: apps.map(\.url.path))) { _ in
+            iconVersion &+= 1
+        }
     }
 
     // MARK: - 网格预览
@@ -122,7 +125,7 @@ struct FolderCardView: View {
         Button {
             onLaunchApp(app)
         } label: {
-            Image(nsImage: iconProvider.icon(for: app))
+            Image(nsImage: AppIconProvider.shared.icon(for: app))
                 .resizable()
                 .interpolation(.high)
                 .scaledToFit()

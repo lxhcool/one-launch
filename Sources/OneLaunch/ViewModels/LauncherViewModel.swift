@@ -93,8 +93,7 @@ final class LauncherViewModel: ObservableObject {
             .dropFirst()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                guard let self else { return }
-                self.gridCache = self.buildGridCache(gridApps: self.gridCache.gridApps, filteredApps: self.gridCache.filteredApps)
+                self?.updateFoldersInCache()
             }
             .store(in: &cancellables)
 
@@ -102,8 +101,7 @@ final class LauncherViewModel: ObservableObject {
             .dropFirst()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                guard let self else { return }
-                self.gridCache = self.buildGridCache(gridApps: self.gridCache.gridApps, filteredApps: self.gridCache.filteredApps)
+                self?.updatePinnedAppsInCache()
             }
             .store(in: &cancellables)
     }
@@ -230,26 +228,7 @@ final class LauncherViewModel: ObservableObject {
         let pinnedApps = settingsStore.pinnedAppIDs.compactMap { appByID[$0] }
         let scrollableApps = gridApps.filter { !pinnedIDs.contains($0.id) }
         let displays = resolveFolders(for: scrollableApps)
-
-        let folderMap = Dictionary(
-            displays.flatMap { display in
-                display.apps.map { ($0.id, display) }
-            },
-            uniquingKeysWith: { existing, _ in existing }
-        )
-
-        var seenFolders = Set<String>()
-        var items: [LauncherGridItem] = []
-
-        for app in scrollableApps {
-            if let folder = folderMap[app.id] {
-                if seenFolders.insert(folder.id).inserted {
-                    items.append(.folder(folder))
-                }
-            } else {
-                items.append(.app(app))
-            }
-        }
+        let items = buildGridItems(from: scrollableApps, folderDisplays: displays)
 
         let maxPage = max(0, (items.count + itemsPerPage - 1) / itemsPerPage - 1)
         if currentPage > maxPage {
@@ -267,6 +246,52 @@ final class LauncherViewModel: ObservableObject {
             folderDisplays: displays,
             gridItems: items
         )
+    }
+
+    /// 仅更新置顶应用（不重新解析文件夹）
+    private func updatePinnedAppsInCache() {
+        var cache = gridCache
+        let pinnedIDs = Set(settingsStore.pinnedAppIDs)
+        let appByID = Dictionary(cache.gridApps.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        cache.pinnedApps = settingsStore.pinnedAppIDs.compactMap { appByID[$0] }
+        let scrollableApps = cache.gridApps.filter { !pinnedIDs.contains($0.id) }
+        cache.gridItems = buildGridItems(from: scrollableApps, folderDisplays: cache.folderDisplays)
+        gridCache = cache
+    }
+
+    /// 仅更新文件夹展示（不重新解析置顶应用）
+    private func updateFoldersInCache() {
+        var cache = gridCache
+        let pinnedIDs = Set(settingsStore.pinnedAppIDs)
+        let scrollableApps = cache.gridApps.filter { !pinnedIDs.contains($0.id) }
+        cache.folderDisplays = resolveFolders(for: scrollableApps)
+        cache.gridItems = buildGridItems(from: scrollableApps, folderDisplays: cache.folderDisplays)
+
+        if let activeFolderID, !cache.folderDisplays.contains(where: { $0.id == activeFolderID }) {
+            self.activeFolderID = nil
+        }
+
+        gridCache = cache
+    }
+
+    /// 将可滚动应用列表与文件夹合并为 LauncherGridItem 数组
+    private func buildGridItems(from scrollableApps: [AppItem], folderDisplays: [FolderDisplay]) -> [LauncherGridItem] {
+        let folderMap = Dictionary(
+            folderDisplays.flatMap { display in display.apps.map { ($0.id, display) } },
+            uniquingKeysWith: { a, _ in a }
+        )
+        var seenFolders = Set<String>()
+        var items: [LauncherGridItem] = []
+        for app in scrollableApps {
+            if let folder = folderMap[app.id] {
+                if seenFolders.insert(folder.id).inserted {
+                    items.append(.folder(folder))
+                }
+            } else {
+                items.append(.app(app))
+            }
+        }
+        return items
     }
 
     /// 在后台线程执行，用于避免主线程卡顿（UserDefaults 读取 + 排序）

@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import UniformTypeIdentifiers
 
@@ -12,6 +13,7 @@ final class AppIconProvider: ObservableObject {
     private var pendingPaths: [String] = []
     private var pendingLoadWorkItem: DispatchWorkItem?
     private let placeholderIcon: NSImage
+    private let pathSubject = PassthroughSubject<String, Never>()
 
     private init() {
         let image = NSWorkspace.shared.icon(for: .application)
@@ -32,6 +34,23 @@ final class AppIconProvider: ObservableObject {
         }
 
         return placeholderIcon
+    }
+
+    /// 返回仅在指定路径图标加载完成时触发的 Publisher，避免全局重渲染
+    func loadedPublisher(for path: String) -> AnyPublisher<Void, Never> {
+        pathSubject
+            .filter { $0 == path }
+            .map { _ in }
+            .eraseToAnyPublisher()
+    }
+
+    /// 返回在任意一个指定路径图标加载完成时触发的 Publisher
+    func anyLoadedPublisher(for paths: [String]) -> AnyPublisher<Void, Never> {
+        let pathSet = Set(paths)
+        return pathSubject
+            .filter { pathSet.contains($0) }
+            .map { _ in }
+            .eraseToAnyPublisher()
     }
 
     /// 在后台预加载前 N 个应用图标，减轻首次打开列表时的卡顿
@@ -94,6 +113,7 @@ final class AppIconProvider: ObservableObject {
             }
             cache[path] = img
             inFlight.remove(path)
+            pathSubject.send(path)
         }
 
         if didChange {

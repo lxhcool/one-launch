@@ -68,10 +68,6 @@ struct LauncherView: View {
             + (viewModel.pinnedApps.isEmpty ? 0 : pinnedSidebarWidth + contentSectionsSpacing)
     }
 
-    private var gridItemIDs: [String] {
-        viewModel.gridItems.map(\.id)
-    }
-
     private var adaptiveColorScheme: ColorScheme {
         settingsStore.backgroundIsDark ? .dark : .light
     }
@@ -494,23 +490,6 @@ struct LauncherView: View {
             viewModel.launch(app)
         }
     }
-    private var appGrid: some View {
-        LazyVGrid(columns: columns, spacing: 18) {
-            ForEach(viewModel.gridItems) { item in
-                switch item {
-                case let .app(app):
-                    appGridItem(for: app)
-                case let .folder(folder):
-                    folderGridItem(for: folder)
-                }
-            }
-        }
-        .padding(.top, 24)
-        .padding(.horizontal, 24)
-        .padding(.bottom, 10)
-        .animation(.interactiveSpring(response: 0.22, dampingFraction: 0.82, blendDuration: 0.08), value: gridItemIDs)
-    }
-
     private var canHandlePageSwipe: Bool {
         !viewModel.showSettings
             && viewModel.presentedFolder == nil
@@ -609,18 +588,20 @@ struct LauncherView: View {
         .shadow(color: .black.opacity(isDragging ? 0.3 : 0), radius: isDragging ? 16 : 0, y: isDragging ? 8 : 0)
         .zIndex(isDragging ? 100 : 0)
         .animation(.spring(response: 0.25, dampingFraction: 0.75), value: isHoverTarget)
-        .background(
-            GeometryReader { geo in
-                Color.clear.preference(
-                    key: GridDropFramePreferenceKey.self,
-                    value: [GridDropFrameEntry(
-                        itemID: app.id,
-                        target: .app(app.id),
-                        frame: geo.frame(in: .named("launcherGridSpace"))
-                    )]
-                )
+        .background {
+            if draggingAppID != nil || draggingFolderID != nil {
+                GeometryReader { geo in
+                    Color.clear.preference(
+                        key: GridDropFramePreferenceKey.self,
+                        value: [GridDropFrameEntry(
+                            itemID: app.id,
+                            target: .app(app.id),
+                            frame: geo.frame(in: .named("launcherGridSpace"))
+                        )]
+                    )
+                }
             }
-        )
+        }
         .simultaneousGesture(dragGesture(for: app.id))
         .contextMenu {
             customAppContextMenu(for: app)
@@ -665,18 +646,20 @@ struct LauncherView: View {
         .shadow(color: .black.opacity(isDragging ? 0.3 : 0), radius: isDragging ? 16 : 0, y: isDragging ? 8 : 0)
         .zIndex(isDragging ? 100 : 0)
         .animation(.spring(response: 0.25, dampingFraction: 0.75), value: isHoverTarget)
-        .background(
-            GeometryReader { geo in
-                Color.clear.preference(
-                    key: GridDropFramePreferenceKey.self,
-                    value: [GridDropFrameEntry(
-                        itemID: folderItemID,
-                        target: .folder(folder.id),
-                        frame: geo.frame(in: .named("launcherGridSpace"))
-                    )]
-                )
+        .background {
+            if draggingAppID != nil || draggingFolderID != nil {
+                GeometryReader { geo in
+                    Color.clear.preference(
+                        key: GridDropFramePreferenceKey.self,
+                        value: [GridDropFrameEntry(
+                            itemID: folderItemID,
+                            target: .folder(folder.id),
+                            frame: geo.frame(in: .named("launcherGridSpace"))
+                        )]
+                    )
+                }
             }
-        )
+        }
         .simultaneousGesture(folderDragGesture(for: folder.id))
         .contextMenu {
             Button("解散文件夹") {
@@ -1316,13 +1299,13 @@ private struct PinnedAppButton: View {
     let app: AppItem
     let iconSize: Double
     let action: () -> Void
-    @ObservedObject private var iconProvider = AppIconProvider.shared
     @State private var isHovered = false
+    @State private var iconVersion = 0
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 4) {
-                Image(nsImage: iconProvider.icon(for: app))
+                Image(nsImage: AppIconProvider.shared.icon(for: app))
                     .resizable()
                     .interpolation(.high)
                     .frame(width: iconSize, height: iconSize)
@@ -1345,6 +1328,9 @@ private struct PinnedAppButton: View {
         .onHover { hovering in
             isHovered = hovering
         }
+        .onReceive(AppIconProvider.shared.loadedPublisher(for: app.url.path)) { _ in
+            iconVersion &+= 1
+        }
         .help(app.name)
     }
 }
@@ -1355,12 +1341,12 @@ private struct SearchResultRowView: View {
     let app: AppItem
     let isSelected: Bool
     let action: () -> Void
-    @ObservedObject private var iconProvider = AppIconProvider.shared
+    @State private var iconVersion = 0
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                Image(nsImage: iconProvider.icon(for: app))
+                Image(nsImage: AppIconProvider.shared.icon(for: app))
                     .resizable()
                     .frame(width: 36, height: 36)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -1405,6 +1391,9 @@ private struct SearchResultRowView: View {
             )
         }
         .buttonStyle(.plain)
+        .onReceive(AppIconProvider.shared.loadedPublisher(for: app.url.path)) { _ in
+            iconVersion &+= 1
+        }
     }
 }
 
