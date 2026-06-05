@@ -110,7 +110,7 @@ struct LauncherView: View {
                 }
                 .frame(maxWidth: contentMaxWidth, maxHeight: .infinity, alignment: .top)
                 .padding(.horizontal, 52)
-                .padding(.top, max(geometry.safeAreaInsets.top + 16, 32))
+                .padding(.top, max(geometry.safeAreaInsets.top + 64, 80))
                 .padding(.bottom, contentBottomInset)
                 .scaleEffect(viewModel.scale)
 
