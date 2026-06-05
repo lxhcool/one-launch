@@ -397,7 +397,7 @@ struct LauncherView: View {
                                 description: Text("试试切换到其他分类")
                             )
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        } else if headerElementsVisible {
+                        } else {
                             ScrollView(.vertical, showsIndicators: false) {
                                 VStack(spacing: 0) {
                                     LazyVGrid(columns: columns, spacing: 22) {
@@ -436,23 +436,9 @@ struct LauncherView: View {
                                 }
                                 gridFrames = frames
                             }
-                        } else {
-                            LazyVGrid(columns: columns, spacing: 22) {
-                                ForEach(viewModel.gridItems) { item in
-                                    switch item {
-                                    case let .app(app):
-                                        appGridItem(for: app)
-                                    case let .folder(folder):
-                                        folderGridItem(for: folder)
-                                    }
-                                }
-                            }
-                            .padding(.top, 8)
-                            .padding(.horizontal, 8)
-                            .padding(.bottom, 16)
                         }
                     }
-                    .frame(width: contentGeo.size.width, height: contentGeo.size.height, alignment: headerElementsVisible ? .topLeading : .center)
+                    .frame(width: contentGeo.size.width, height: contentGeo.size.height, alignment: .topLeading)
                 }
             }
         }
