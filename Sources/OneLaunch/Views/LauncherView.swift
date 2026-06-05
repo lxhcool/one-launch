@@ -311,7 +311,7 @@ struct LauncherView: View {
                 searchBar
             }
         }
-        .padding(.top, 16)
+        .padding(.top, 36)
         .padding(.horizontal, 8)
         .onTapGesture {}
     }

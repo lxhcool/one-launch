@@ -15,9 +15,7 @@ struct SearchField: NSViewRepresentable {
         Coordinator(parent: self)
     }
 
-    func makeNSView(context: Context) -> CenteringView {
-        let container = CenteringView()
-
+    func makeNSView(context: Context) -> NSTextField {
         let field = NSTextField()
         field.delegate = context.coordinator
         field.focusRingType = .none
@@ -30,25 +28,20 @@ struct SearchField: NSViewRepresentable {
         field.textColor = .white
         field.usesSingleLineMode = true
         field.lineBreakMode = .byTruncatingTail
-
-        container.addSubview(field)
-        container.textField = field
-        return container
+        return field
     }
 
-    func updateNSView(_ nsView: CenteringView, context: Context) {
-        guard let field = nsView.textField else { return }
-
+    func updateNSView(_ nsView: NSTextField, context: Context) {
         // 输入法组合期间不覆盖 NSTextField 内容，让 IME 完全控制显示
-        let isComposing = (field.currentEditor() as? NSTextView)?.hasMarkedText() ?? false
+        let isComposing = (nsView.currentEditor() as? NSTextView)?.hasMarkedText() ?? false
 
-        if !isComposing && field.stringValue != text {
-            field.stringValue = text
+        if !isComposing && nsView.stringValue != text {
+            nsView.stringValue = text
         }
 
-        field.backgroundColor = .clear
-        field.textColor = .white
-        field.placeholderAttributedString = NSAttributedString(
+        nsView.backgroundColor = .clear
+        nsView.textColor = .white
+        nsView.placeholderAttributedString = NSAttributedString(
             string: placeholder,
             attributes: [
                 .foregroundColor: NSColor.white.withAlphaComponent(0.38),
@@ -58,26 +51,10 @@ struct SearchField: NSViewRepresentable {
 
         if shouldFocus {
             DispatchQueue.main.async {
-                field.window?.makeFirstResponder(field)
-                (field.currentEditor() as? NSTextView)?.insertionPointColor = NSColor.white
+                nsView.window?.makeFirstResponder(nsView)
+                (nsView.currentEditor() as? NSTextView)?.insertionPointColor = NSColor.white
                 self.shouldFocus = false
             }
-        }
-    }
-
-    final class CenteringView: NSView {
-        var textField: NSTextField?
-
-        override func layout() {
-            super.layout()
-            guard let textField else { return }
-            let fieldHeight = textField.intrinsicContentSize.height
-            textField.frame = NSRect(
-                x: 0,
-                y: (bounds.height - fieldHeight) / 2,
-                width: bounds.width,
-                height: fieldHeight
-            )
         }
     }
 
