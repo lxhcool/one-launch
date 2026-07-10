@@ -72,6 +72,56 @@ swift run
 
 > macOS 会缓存应用图标，替换后如果没变化，可以重启 Finder（`killall Finder`）或注销重新登录。
 
+## 打包并上传到 Mac App Store
+
+当前仓库是 Swift Package Manager 项目，没有 Xcode project。`scripts/package-appstore.sh` 会复用本地 `.app` 打包流程，然后用 Mac App Store 证书签名并生成可上传的 `dist/OneLaunch-appstore.pkg`。
+
+完整步骤、命令和常见错误见 [APP_STORE_RELEASE.md](APP_STORE_RELEASE.md)。
+
+前置条件：
+
+- 加入 Apple Developer Program
+- 在 App Store Connect 创建 macOS App 记录，Bundle ID 要和脚本里的 `BUNDLE_ID` 一致
+- 本机 Xcode 已登录开发者账号，钥匙串里有 Mac App Distribution 和 Mac Installer Distribution 证书
+- 在 Apple Developer 后台创建并下载 Mac App Store provisioning profile
+- 准备 App Store Connect 登录凭据，建议使用 app-specific password 或 API/Transporter 流程
+
+打包：
+
+```bash
+BUNDLE_ID="com.example.OneLaunch" \
+MARKETING_VERSION="0.1.0" \
+BUILD_VERSION="1" \
+APP_SIGN_IDENTITY="Apple Distribution: Your Name (TEAMID)" \
+INSTALLER_SIGN_IDENTITY="3rd Party Mac Developer Installer: Your Name (TEAMID)" \
+PROVISIONING_PROFILE="$HOME/Downloads/OneLaunch_Mac_App_Store.provisionprofile" \
+./scripts/package-appstore.sh
+```
+
+验证：
+
+```bash
+xcrun altool --validate-app \
+  -f dist/OneLaunch-appstore.pkg \
+  -t macos \
+  -u "你的 Apple ID" \
+  -p "app-specific password"
+```
+
+上传：
+
+```bash
+xcrun altool --upload-app \
+  -f dist/OneLaunch-appstore.pkg \
+  -t macos \
+  -u "你的 Apple ID" \
+  -p "app-specific password"
+```
+
+上传成功后，App Store Connect 还需要等待 Apple 处理 build，再选择该 build 填写截图、隐私、年龄分级、审核说明后提交审核。
+
+注意：Mac App Store 要求 sandbox。仓库已提供 `scripts/appstore-entitlements.plist`，但 OneLaunch 的核心功能包含扫描 `/Applications`、监听应用目录、注册全局快捷键、启动其他 app。正式提交前必须用 `package-appstore.sh` 产物在 sandbox 签名状态下完整测试这些功能；如果需要临时 sandbox exception entitlement，提交 App Review 时还要说明用途和验证方式。
+
 ## 技术栈
 
 - **语言**：Swift 6.2

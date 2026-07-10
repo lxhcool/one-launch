@@ -14,6 +14,11 @@ CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 PLIST_PATH="$CONTENTS_DIR/Info.plist"
+BUNDLE_ID="${BUNDLE_ID:-cool.lxh.one-launch}"
+MARKETING_VERSION="${MARKETING_VERSION:-0.1.0}"
+BUILD_VERSION="${BUILD_VERSION:-1}"
+MINIMUM_SYSTEM_VERSION="${MINIMUM_SYSTEM_VERSION:-14.0}"
+APP_CATEGORY="${APP_CATEGORY:-public.app-category.productivity}"
 
 mkdir -p \
   "$HOME_OVERRIDE" \
@@ -76,7 +81,7 @@ if [ -f "$ICON_SRC" ]; then
   echo "Generated app icon from icon.png"
 fi
 
-cat > "$PLIST_PATH" <<'PLIST'
+cat > "$PLIST_PATH" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -86,7 +91,7 @@ cat > "$PLIST_PATH" <<'PLIST'
   <key>CFBundleExecutable</key>
   <string>OneLaunch</string>
   <key>CFBundleIdentifier</key>
-  <string>cool.lxh.one-launch</string>
+  <string>$BUNDLE_ID</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
@@ -94,11 +99,13 @@ cat > "$PLIST_PATH" <<'PLIST'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>$MARKETING_VERSION</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>$BUILD_VERSION</string>
   <key>LSMinimumSystemVersion</key>
-  <string>14.0</string>
+  <string>$MINIMUM_SYSTEM_VERSION</string>
+  <key>LSApplicationCategoryType</key>
+  <string>$APP_CATEGORY</string>
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>CFBundleIconFile</key>
